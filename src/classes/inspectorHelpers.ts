@@ -20,15 +20,12 @@ export const isHexColor = (value: string, alpha = false) =>
 // plugin's own "Up" look is expected to sit under (`plugins/state.ts`).
 export const DEFAULT_STATE_NAME = "Up";
 
-export const DEFAULT_STATE_CONFIG: KeyStateConfig = {
-  // No `backgroundColor` — a brand-new state has none set, same as
-  // Border's own `borderEnabled: true` default doesn't apply here (see
-  // `KeyStateConfig`'s own docblock).
-  borderEnabled: true,
-  borderColor: "#808080",
-  borderStyle: "solid",
-  borderWidth: 1,
-};
+// Empty on purpose, and not a placeholder waiting to be filled in: what a
+// brand-new state looks like is `kbrd.render-key`'s own `defaultConfig`
+// (see its `plugin.json`), the same single source of truth every other
+// plugin's defaults come from. Storing nothing is what lets those defaults
+// keep applying — see `KeyStateConfig`'s own docblock.
+export const DEFAULT_STATE_CONFIG: KeyStateConfig = {};
 
 export const DEFAULT_KEY_PROPERTIES: KeyPropertyConfig = {
   keyMode: "momentary",
@@ -88,23 +85,52 @@ export function setDragSymbol(event: React.DragEvent, symbol = "⠿") {
   requestAnimationFrame(() => dragImage.remove());
 }
 
-// A 1×1 fully-transparent GIF, used as the native drag image so the
-// browser's own preview is invisible — the same constant react-dnd's
-// `getEmptyImage()` uses for the same purpose. An unattached <canvas>
-// doesn't reliably suppress the native preview in every browser (some
-// fall back to snapshotting the whole page instead), but a pre-decoded
-// data-URI image does, with no DOM attachment or load event needed.
-// Built lazily (not at module load) so importing this file — e.g. for
-// `DEFAULT_KEY_PROPERTIES`, from plain unit tests with no DOM — never
-// touches `Image` at all unless a drag actually starts.
+// A 1×1 fully-transparent GIF, handed to `setDragImage` so the browser's
+// own drag preview is invisible and the only thing on screen is this
+// file's own follow-ghost (see `setPluginDragImage`).
+//
+// Two conditions have to hold for a browser to actually take it, and
+// missing either one sends it back to its default preview — a snapshot
+// composited from the page's own top-left corner:
+//
+//   * it must be decoded (see `hiddenDragImage` below), and
+//   * it must be laid out somewhere the browser can see it — hence the
+//     single almost-transparent pixel pinned in the viewport's corner
+//     rather than the usual trick of parking it off-screen at some
+//     negative offset, which counts as invisible and gets declined.
+function createHiddenDragImage() {
+  const img = new Image(1, 1);
+  img.src =
+    "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
+  Object.assign(img.style, {
+    position: "fixed",
+    top: "0",
+    left: "0",
+    width: "1px",
+    height: "1px",
+    // Not a flat `0`: a fully transparent element is one more thing a
+    // browser can reasonably call invisible and refuse to snapshot.
+    opacity: "0.01",
+    pointerEvents: "none",
+  });
+  document.body.appendChild(img);
+  return img;
+}
+
+// Made as soon as this module loads in a browser, *not* on the first
+// `dragstart`: `setDragImage` runs synchronously inside that event, so an
+// image born in the same tick hasn't decoded yet — the browser then
+// declines it and falls back to its own preview. That's a guaranteed miss
+// on the very first drag of a session and a hit on every one after it.
+// Guarded on `document` so importing this file from a DOM-less unit test —
+// for `DEFAULT_KEY_PROPERTIES`, say — still costs nothing.
 let hiddenDragImage: HTMLImageElement | undefined;
+if (typeof document !== "undefined" && document.body) {
+  hiddenDragImage = createHiddenDragImage();
+}
+
 function getHiddenDragImage() {
-  hiddenDragImage ??= (() => {
-    const img = new Image();
-    img.src =
-      "data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==";
-    return img;
-  })();
+  hiddenDragImage ??= createHiddenDragImage();
   return hiddenDragImage;
 }
 

@@ -8,6 +8,7 @@ import type {
 import { isMappingVisible } from "../plugins/registry";
 import type { KeyPlugin } from "../types/layer";
 import type { DivideGrid } from "../types/layout";
+import type { KeyLook } from "../utils/keyProperties";
 import {
   divisionCellRect,
   divisionOutline,
@@ -63,6 +64,10 @@ type Props = {
   // `keyRef` — see `Display`'s own `keyPluginsFor`, the one place that
   // actually knows about `layer.plugins`.
   keyPluginsFor: (keyRef: string | null | undefined) => KeyPlugin[];
+  // Resolves a division's own Background/Border look the same way — see
+  // `Display`'s own `keyLookFor`, which also decides that Layout mode
+  // gets none of it.
+  keyLookFor: (keyRef: string | null | undefined) => KeyLook | undefined;
 };
 
 /**
@@ -94,6 +99,7 @@ export default function LayoutCellDivision({
   onDivisionDrop,
   onDivisionPointerDown,
   keyPluginsFor,
+  keyLookFor,
 }: Props) {
   const count = divide.cols * divide.rows;
   const cols = divide.cols;
@@ -111,6 +117,7 @@ export default function LayoutCellDivision({
     return {
       group,
       primary,
+      look: keyLookFor(divide.cells[primary]?.keyRef),
       isMerged: group.length > 1,
       isSelected,
       isDropTarget: isDropTarget(primary),
@@ -123,6 +130,14 @@ export default function LayoutCellDivision({
   });
   const isHighlighted = (subId: number) =>
     status[subId].isSelected || status[subId].isDropTarget || status[subId].isMoveTarget;
+  // A division whose own key carries a border draws its whole outline
+  // itself (see `LayoutCell`'s `look`), so it wants no part in the shared
+  // dashed pass below — neither its own sides, nor a neighbour's towards
+  // it, exactly like a highlighted one.
+  const drawsOwnBorder = (subId: number) =>
+    Boolean(status[subId].look?.borderEnabled);
+  const coversOwnEdges = (subId: number) =>
+    isHighlighted(subId) || drawsOwnBorder(subId);
 
   // Two adjacent, both-dashed divisions each stroking their own full
   // border would draw their shared edge twice — and since each one's
@@ -140,7 +155,7 @@ export default function LayoutCellDivision({
   // baseline neighbour, a rarer pairing this doesn't fully dedupe.
   const borderSegments: { x1: number; y1: number; x2: number; y2: number }[] = [];
   for (let subId = 0; subId < count; subId++) {
-    if (status[subId].isMerged || isHighlighted(subId) || !status[subId].isVisible) {
+    if (status[subId].isMerged || coversOwnEdges(subId) || !status[subId].isVisible) {
       continue;
     }
     const row = Math.floor(subId / cols);
@@ -154,7 +169,7 @@ export default function LayoutCellDivision({
     const drawsTowards = (dRow: number, dCol: number, owns: boolean) => {
       const otherId = neighbourOf(dRow, dCol);
       if (otherId === null) return true; // the grid's own outer edge
-      if (isHighlighted(otherId)) return false; // its own full border covers it
+      if (coversOwnEdges(otherId)) return false; // its own full border covers it
       if (status[otherId].isMerged) return true; // accept the rare double-render risk
       if (!status[otherId].isVisible) return true; // nothing there to share the edge with
       return owns; // both baseline — only the owning side draws it
@@ -208,6 +223,7 @@ export default function LayoutCellDivision({
     const {
       group,
       primary,
+      look,
       isSelected,
       isDropTarget: primaryIsDropTarget,
       isMoveTarget: primaryIsMoveTarget,
@@ -248,6 +264,7 @@ export default function LayoutCellDivision({
         labelBounds={outline?.labelBounds}
         typeId={divCell?.typeId}
         keyPlugins={keyPluginsFor(divCell?.keyRef)}
+        look={look}
         unit={unit}
         isEmpty={!hasContent}
         // Never this element's own highlighted styling — see

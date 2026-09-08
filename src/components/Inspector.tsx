@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import {
   Accordion,
   ActionIcon,
@@ -25,6 +25,42 @@ import type { GridCell } from "../types/layout";
 import LayoutCellProperties from "./LayoutCellProperties";
 import StateEditor from "./modals/StateEditor";
 import type { KeyPlugin, KeyProperty, LayerData } from "../types/layer";
+
+// The three numbers the Plugins and Properties lists share, so switching
+// tabs never moves or resizes what they have in common. `ROW_HEIGHT` is
+// the Properties heading's own natural height (its 28px delete button plus
+// 10px of padding either side) — the Plugins tab has no such button to
+// grow its rows, so it states the same height by hand. `ROW_RULE` is the
+// 1px each row is closed with: Mantine draws it on the accordion item,
+// *outside* the heading, while a Plugins row draws it on itself.
+const GROUP_LABEL_SPACE = 26;
+// How far above the first group's label row the state picker sits — it
+// belongs to the key, not to the group it would otherwise share a line
+// with. Absolutely positioned, so this moves the picker alone.
+const STATE_PICKER_LIFT = 20;
+const ROW_HEIGHT = 48;
+const ROW_RULE = 1;
+
+/** The heading over one group of the Plugins/Properties lists, in the same
+ * key as the property groups inside each editor — with the same room
+ * above itself wherever it appears, so either tab's first group starts at
+ * the same height. */
+function GroupLabel({ children }: { children: ReactNode }) {
+  return (
+    <Text
+      size="xs"
+      fw={600}
+      tt="uppercase"
+      c="dimmed"
+      px={15}
+      pt={GROUP_LABEL_SPACE}
+      pb={6}
+      style={{ letterSpacing: "0.04em" }}
+    >
+      {children}
+    </Text>
+  );
+}
 
 type Props = {
   layer: LayerData | null;
@@ -103,7 +139,7 @@ export default function Inspector({
     activeState,
     activeStateConfig,
     setActiveState,
-    patchStateConfig,
+    setStateConfig,
     addState,
     renameState,
     deleteState,
@@ -122,6 +158,253 @@ export default function Inspector({
   const [stateEditorMode, setStateEditorMode] = useState<"add" | "edit" | null>(
     null,
   );
+
+  // One plugin instance's own row in the Properties list — its own
+  // function so each category group below can render its own list of
+  // them (see `propertyGroups`), rather than one flat map over the lot.
+  function renderInstance(item: KeyPlugin) {
+    const plugin = pluginById(item.plugin_id);
+    if (!plugin) return null;
+    // This branch of the Properties tab only renders in Mapping
+    // mode — see the `mode === "layout"` split above.
+    const Editor = plugin.MappingEditor;
+    const summary = pluginSummary(item);
+    const definedConfig = stateConfig(item.config, activeState);
+    const currentConfig = {
+      ...plugin.defaultConfig,
+      ...definedConfig,
+    };
+    return (
+      <Accordion.Item
+        key={item.id}
+        value={String(item.id)}
+        style={{
+          position: "relative",
+        }}
+        onDragOver={(event) => {
+          if (
+            draggedPropertyId !== null &&
+            pluginById(
+              instances.find(
+                (instance) => instance.id === draggedPropertyId,
+              )?.plugin_id ?? "",
+            )?.category === plugin.category &&
+            event.dataTransfer.types.includes(
+              "application/kbrd-property",
+            )
+          ) {
+            event.preventDefault();
+            event.dataTransfer.dropEffect = "move";
+            const bounds = event.currentTarget.getBoundingClientRect();
+            setDropIndicator({
+              id: item.id,
+              edge:
+                event.clientY < bounds.top + bounds.height / 2
+                  ? "before"
+                  : "after",
+            });
+          } else {
+            setDropIndicator(null);
+          }
+        }}
+        onDragLeave={(event) => {
+          if (
+            !event.currentTarget.contains(
+              event.relatedTarget as Node | null,
+            )
+          ) {
+            setDropIndicator((value) =>
+              value?.id === item.id ? null : value,
+            );
+          }
+        }}
+        onDrop={(event) => {
+          const draggedId = Number(
+            event.dataTransfer.getData("application/kbrd-property"),
+          );
+          if (!Number.isNaN(draggedId)) {
+            event.preventDefault();
+            const edge =
+              dropIndicator?.id === item.id
+                ? dropIndicator.edge
+                : "before";
+            setDropIndicator(null);
+            void reorder(draggedId, item.id, edge);
+          }
+        }}
+      >
+        {dropIndicator?.id === item.id && (
+          <Box
+            aria-hidden
+            style={{
+              position: "absolute",
+              zIndex: 10,
+              left: 0,
+              right: 0,
+              [dropIndicator.edge === "before" ? "top" : "bottom"]:
+                -1,
+              height: 1,
+              pointerEvents: "none",
+              // The app's own "this is the one" green, the same a
+              // selected cell is outlined in — a drop mark is a
+              // destination, not another rule in the list.
+              backgroundColor: "var(--kbrd-color-selected)",
+            }}
+          />
+        )}
+        <Group
+          className="inspector-accordion-heading"
+          gap={0}
+          wrap="nowrap"
+          h={ROW_HEIGHT}
+        >
+          <Box
+            draggable
+            // The only spacing this row states by hand: the room between
+            // the grip and the name it belongs to. Everything around it
+            // comes from the heading's own padding.
+            pr={10}
+            onDragStart={(event) => {
+              event.stopPropagation();
+              event.dataTransfer.effectAllowed = "move";
+              event.dataTransfer.setData(
+                "application/kbrd-property",
+                String(item.id),
+              );
+              setDraggedPropertyId(item.id);
+              setDragSymbol(event);
+            }}
+            onDragEnd={() => {
+              setDraggedPropertyId(null);
+              setDropIndicator(null);
+            }}
+          >
+            <MdDragIndicator
+              aria-label={`Move ${plugin.name}`}
+              style={{ cursor: "grab", display: "block" }}
+            />
+          </Box>
+          <Accordion.Control
+            style={{ flex: 1, paddingLeft: 0 }}
+          >
+            <Text truncate>
+              {plugin.name}
+              {summary && ` (${summary})`}
+            </Text>
+          </Accordion.Control>
+          <ActionIcon
+            color="red"
+            variant="subtle"
+            aria-label={`Delete ${plugin.name}`}
+            onClick={() => setDeleting(item)}
+          >
+            <MdDelete />
+          </ActionIcon>
+        </Group>
+        <Accordion.Panel className="property-editor-panel">
+          <Editor
+            config={currentConfig}
+            definedConfig={definedConfig}
+            targetType={targetType}
+            onChange={(config) =>
+              patch(item, {
+                config: withStateConfig(item.config, activeState, config),
+              })
+            }
+          />
+        </Accordion.Panel>
+      </Accordion.Item>
+    );
+  }
+
+  // The element's own form, pinned at the end of its own category's
+  // group: it is what every plugin in the list draws on top of (see
+  // `LayoutCell` in kbrd-web), and it is also why that group is never
+  // empty.
+  const systemItem = (
+    <Accordion.Item value="system">
+      <Group
+        className="inspector-accordion-heading"
+        gap={0}
+        wrap="nowrap"
+        h={ROW_HEIGHT}
+      >
+        <Box
+          pr={10}
+          aria-label={`Move ${systemPluginName} disabled`}
+          aria-disabled="true"
+        >
+          <MdDragIndicator
+            style={{
+              cursor: "not-allowed",
+              display: "block",
+              opacity: 0.35,
+            }}
+          />
+        </Box>
+        <Accordion.Control style={{ flex: 1, paddingLeft: 0 }}>
+          {systemPluginName}
+        </Accordion.Control>
+        <ActionIcon
+          color="red"
+          variant="transparent"
+          aria-label={`Delete ${systemPluginName} disabled`}
+          disabled={!systemPluginDeletable}
+          style={{ backgroundColor: "transparent" }}
+        >
+          <MdDelete />
+        </ActionIcon>
+      </Group>
+      {targetType === "key" && SystemEditor && (
+        <Accordion.Panel className="property-editor-panel">
+          {/* Assembled exactly like a plugin instance's own
+              panel above: the complete view to render from,
+              plus what the state actually stores so the editor
+              can tell a set field from an unset one. */}
+          <SystemEditor
+            config={{
+              ...systemPlugin?.defaultConfig,
+              ...activeStateConfig,
+            }}
+            definedConfig={activeStateConfig}
+            targetType={targetType}
+            onChange={(config) => setStateConfig(config)}
+          />
+        </Accordion.Panel>
+      )}
+    </Accordion.Item>
+  );
+
+  // The Properties list split by plugin category — one labelled group
+  // each, in the registry's own order (`pluginCategories`), with anything
+  // it doesn't name following alphabetically. A category with nothing in
+  // it isn't shown at all; the system plugin's own (Display) always has
+  // at least its own row, so that one always is. Reordering by drag is
+  // already category-bound (see `renderInstance`'s `onDragOver`), so this
+  // only draws a grouping the list already had.
+  const systemCategory = systemPlugin?.category;
+  const propertyGroups = (() => {
+    const grouped = new Map<string, KeyPlugin[]>();
+    if (systemCategory) grouped.set(systemCategory, []);
+    for (const item of instances) {
+      const category = pluginById(item.plugin_id)?.category;
+      // A plugin the registry no longer knows has no group to go in —
+      // `renderInstance` draws nothing for it either.
+      if (!category) continue;
+      grouped.set(category, [...(grouped.get(category) ?? []), item]);
+    }
+    const rank = (category: string) => {
+      const index = pluginCategories.indexOf(category);
+      return index === -1 ? pluginCategories.length : index;
+    };
+    return [...grouped.entries()]
+      .map(([category, items]) => ({ category, items }))
+      .sort(
+        (left, right) =>
+          rank(left.category) - rank(right.category) ||
+          left.category.localeCompare(right.category),
+      );
+  })();
 
   return (
     <Box
@@ -149,85 +432,90 @@ export default function Inspector({
                 : "Create a layout to add plugins."}
             </Text>
           ) : (
-            // `key={mode}` forces a fresh instance on every mode switch —
-            // `defaultValue` is only ever read once, at mount, so without
-            // this the categories left open/closed from Layout mode would
-            // just carry straight over instead of reopening every one of
-            // Mapping's own (`pluginCategories` itself already reacts to
-            // `mode`, an uncontrolled Accordion's own expanded state
-            // wouldn't otherwise).
-            <Accordion
-              key={mode}
-              multiple
-              className="plugin-accordion"
-              defaultValue={pluginCategories}
-            >
-              {pluginCategories.map(
-                (category) => {
-                  const categoryPlugins = draggablePlugins.filter(
-                    (plugin) => plugin.category === category,
-                  );
-                  return (
-                    <Accordion.Item key={category} value={category}>
-                      <Box className="inspector-accordion-heading">
-                        <Accordion.Control>{category}</Accordion.Control>
-                      </Box>
-                      <Accordion.Panel className="plugin-category-panel">
-                        {categoryPlugins.map((plugin, index) => (
-                          <Box
-                            key={plugin.id}
-                            py="sm"
-                            pl={10}
-                            pr={10}
-                            draggable
-                            style={{
-                              borderBottom:
-                                categoryPlugins.length > 1 &&
-                                index < categoryPlugins.length - 1
-                                  ? "1px solid var(--kbrd-border-color)"
-                                  : undefined,
-                              // Without this, starting the drag with a
-                              // left click paints a native text/element
-                              // selection highlight over the row instead
-                              // of (or alongside) the custom drag ghost.
-                              userSelect: "none",
-                              WebkitUserSelect: "none",
-                              WebkitUserDrag: "element",
-                            }}
-                            onDragStart={(event) => {
-                              // "move" (not "copy") so the browser's own
-                              // cursor badge doesn't show a "+" — dropping
-                              // a plugin here doesn't remove it from this
-                              // list either way, "move" is just the cursor
-                              // this app wants.
-                              event.dataTransfer.effectAllowed = "move";
-                              event.dataTransfer.setData(
-                                "application/kbrd-plugin",
-                                plugin.id,
-                              );
-                              setPluginDragImage(event, plugin.name);
-                            }}
+            // One labelled group per category, no accordion: with two of
+            // them (Display and Invoke in Mapping mode, Layout alone in
+            // Layout mode) there is nothing to fold away, and a list you
+            // drag *from* is worth having permanently in view.
+            // `pluginCategories` is derived from the plugins themselves,
+            // so a category shown here always has at least one row.
+            <Stack gap={0}>
+              {pluginCategories.map((category) => {
+                const categoryPlugins = draggablePlugins.filter(
+                  (plugin) => plugin.category === category,
+                );
+                return (
+                  <Box key={category}>
+                    <GroupLabel>{category}</GroupLabel>
+                    {/* Closed at the top, each row closed at the bottom —
+                        the same rules the Properties tab's own lists are
+                        drawn with. */}
+                    <Box
+                      style={{
+                        borderTop: "1px solid var(--kbrd-border-color)",
+                      }}
+                    >
+                      {categoryPlugins.map((plugin) => (
+                        <Box
+                          key={plugin.id}
+                          // The Properties heading's own height plus the
+                          // rule below it, which that list draws on its
+                          // accordion item rather than on the heading —
+                          // here the row carries both (Mantine boxes are
+                          // `border-box`). Same 10px padding as well.
+                          h={ROW_HEIGHT + ROW_RULE}
+                          p={10}
+                          draggable
+                          style={{
+                            borderBottom: "1px solid var(--kbrd-border-color)",
+                            // Without this, starting the drag with a
+                            // left click paints a native text/element
+                            // selection highlight over the row instead
+                            // of (or alongside) the custom drag ghost.
+                            userSelect: "none",
+                            WebkitUserSelect: "none",
+                            WebkitUserDrag: "element",
+                          }}
+                          onDragStart={(event) => {
+                            // "move" (not "copy") so the browser's own
+                            // cursor badge doesn't show a "+" — dropping
+                            // a plugin here doesn't remove it from this
+                            // list either way, "move" is just the cursor
+                            // this app wants.
+                            event.dataTransfer.effectAllowed = "move";
+                            event.dataTransfer.setData(
+                              "application/kbrd-plugin",
+                              plugin.id,
+                            );
+                            setPluginDragImage(event, plugin.name);
+                          }}
+                        >
+                          {/* 10px between the grip and the name, as in
+                              the Properties tab's own rows. */}
+                          <Group
+                            gap={10}
+                            wrap="nowrap"
+                            // Centred in whatever the fixed row leaves,
+                            // rather than sitting on its top padding.
+                            align="center"
+                            h="100%"
                           >
-                            <Group justify="space-between" wrap="nowrap">
-                              <Group gap="xs" wrap="nowrap">
-                                <MdDragIndicator
-                                  aria-label="Move plugin"
-                                  style={{ cursor: "grab", flexShrink: 0 }}
-                                />
-                                <Text>{plugin.name}</Text>
-                              </Group>
-                              <Text size="xs" c="dimmed">
-                                {plugin.version}
-                              </Text>
-                            </Group>
-                          </Box>
-                        ))}
-                      </Accordion.Panel>
-                    </Accordion.Item>
-                  );
-                },
-              )}
-            </Accordion>
+                            <MdDragIndicator
+                              aria-label="Move plugin"
+                              style={{ cursor: "grab", flexShrink: 0 }}
+                            />
+                            {/* White, not the palette's own body grey:
+                                this is the list you drag from, and the
+                                name is its content rather than its
+                                chrome. */}
+                            <Text c="#ffffff">{plugin.name}</Text>
+                          </Group>
+                        </Box>
+                      ))}
+                    </Box>
+                  </Box>
+                );
+              })}
+            </Stack>
           )}
         </Tabs.Panel>
 
@@ -246,8 +534,24 @@ export default function Inspector({
           ) : !selectedKey ? (
             <Text c="dimmed">No item selected</Text>
           ) : (
-            <Stack key={selectedKey} gap={0}>
-              <Group justify="flex-end" mb="xs" pr={15}>
+            <Stack key={selectedKey} gap={0} style={{ position: "relative" }}>
+              {/* The state picker takes no row of its own — the Plugins
+                  tab has no such control, and the first label of either
+                  list has to sit at the same height — so it's positioned
+                  out of the flow, in the room the panel's own top padding
+                  leaves above the first group label. `STATE_PICKER_LIFT`
+                  is how far above that label it sits: the picker applies
+                  to the whole key rather than to the group below it, and
+                  reads as its own control once clear of the label row. */}
+              <Group
+                justify="flex-end"
+                pr={15}
+                style={{
+                  position: "absolute",
+                  top: GROUP_LABEL_SPACE - STATE_PICKER_LIFT,
+                  right: 0,
+                }}
+              >
                 <State
                   states={propertyConfig.states}
                   activeState={activeState}
@@ -257,203 +561,23 @@ export default function Inspector({
                   onDelete={() => deleteState(activeState)}
                 />
               </Group>
-              <Accordion multiple className="property-accordion">
-                {instances.map((item) => {
-                  const plugin = pluginById(item.plugin_id);
-                  if (!plugin) return null;
-                  // This branch of the Properties tab only renders in Mapping
-                  // mode — see the `mode === "layout"` split above.
-                  const Editor = plugin.MappingEditor;
-                  const summary = pluginSummary(item);
-                  const definedConfig = stateConfig(item.config, activeState);
-                  const currentConfig = {
-                    ...plugin.defaultConfig,
-                    ...definedConfig,
-                  };
-                  return (
-                    <Accordion.Item
-                      key={item.id}
-                      value={String(item.id)}
-                      style={{
-                        position: "relative",
-                      }}
-                      onDragOver={(event) => {
-                        if (
-                          draggedPropertyId !== null &&
-                          pluginById(
-                            instances.find(
-                              (instance) => instance.id === draggedPropertyId,
-                            )?.plugin_id ?? "",
-                          )?.category === plugin.category &&
-                          event.dataTransfer.types.includes(
-                            "application/kbrd-property",
-                          )
-                        ) {
-                          event.preventDefault();
-                          event.dataTransfer.dropEffect = "move";
-                          const bounds = event.currentTarget.getBoundingClientRect();
-                          setDropIndicator({
-                            id: item.id,
-                            edge:
-                              event.clientY < bounds.top + bounds.height / 2
-                                ? "before"
-                                : "after",
-                          });
-                        } else {
-                          setDropIndicator(null);
-                        }
-                      }}
-                      onDragLeave={(event) => {
-                        if (
-                          !event.currentTarget.contains(
-                            event.relatedTarget as Node | null,
-                          )
-                        ) {
-                          setDropIndicator((value) =>
-                            value?.id === item.id ? null : value,
-                          );
-                        }
-                      }}
-                      onDrop={(event) => {
-                        const draggedId = Number(
-                          event.dataTransfer.getData("application/kbrd-property"),
-                        );
-                        if (!Number.isNaN(draggedId)) {
-                          event.preventDefault();
-                          const edge =
-                            dropIndicator?.id === item.id
-                              ? dropIndicator.edge
-                              : "before";
-                          setDropIndicator(null);
-                          void reorder(draggedId, item.id, edge);
-                        }
-                      }}
-                    >
-                      {dropIndicator?.id === item.id && (
-                        <Box
-                          aria-hidden
-                          style={{
-                            position: "absolute",
-                            zIndex: 10,
-                            left: 0,
-                            right: 0,
-                            [dropIndicator.edge === "before" ? "top" : "bottom"]:
-                              -1,
-                            height: 2,
-                            pointerEvents: "none",
-                            backgroundColor: "var(--kbrd-border-color)",
-                          }}
-                        />
-                      )}
-                      <Group
-                        className="inspector-accordion-heading"
-                        gap={0}
-                        wrap="nowrap"
-                      >
-                        <Box
-                          draggable
-                          pl={10}
-                          pr={4}
-                          py="sm"
-                          onDragStart={(event) => {
-                            event.stopPropagation();
-                            event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData(
-                              "application/kbrd-property",
-                              String(item.id),
-                            );
-                            setDraggedPropertyId(item.id);
-                            setDragSymbol(event);
-                          }}
-                          onDragEnd={() => {
-                            setDraggedPropertyId(null);
-                            setDropIndicator(null);
-                          }}
-                        >
-                          <MdDragIndicator
-                            aria-label={`Move ${plugin.name}`}
-                            style={{ cursor: "grab", display: "block" }}
-                          />
-                        </Box>
-                        <Accordion.Control
-                          style={{ flex: 1, paddingLeft: 0 }}
-                        >
-                          <Text truncate>
-                            {plugin.name}
-                            {summary && ` (${summary})`}
-                          </Text>
-                        </Accordion.Control>
-                        <ActionIcon
-                          color="red"
-                          variant="subtle"
-                          aria-label={`Delete ${plugin.name}`}
-                          mr="xs"
-                          onClick={() => setDeleting(item)}
-                        >
-                          <MdDelete />
-                        </ActionIcon>
-                      </Group>
-                      <Accordion.Panel className="property-editor-panel">
-                        <Editor
-                          config={currentConfig}
-                          definedConfig={definedConfig}
-                          targetType={targetType}
-                          onChange={(config) =>
-                            patch(item, {
-                              config: withStateConfig(item.config, activeState, config),
-                            })
-                          }
-                        />
-                      </Accordion.Panel>
-                    </Accordion.Item>
-                  );
-                })}
-                <Accordion.Item value="system">
-                  <Group
-                    className="inspector-accordion-heading"
-                    gap={0}
-                    wrap="nowrap"
-                  >
-                    <Box
-                      pl={10}
-                      pr={4}
-                      py="sm"
-                      aria-label={`Move ${systemPluginName} disabled`}
-                      aria-disabled="true"
-                    >
-                      <MdDragIndicator
-                        style={{
-                          cursor: "not-allowed",
-                          display: "block",
-                          opacity: 0.35,
-                        }}
-                      />
-                    </Box>
-                    <Accordion.Control style={{ flex: 1, paddingLeft: 0 }}>
-                      {systemPluginName}
-                    </Accordion.Control>
-                    <ActionIcon
-                      color="red"
-                      variant="transparent"
-                      mr="xs"
-                      aria-label={`Delete ${systemPluginName} disabled`}
-                      disabled={!systemPluginDeletable}
-                      style={{ backgroundColor: "transparent" }}
-                    >
-                      <MdDelete />
-                    </ActionIcon>
-                  </Group>
-                  {targetType === "key" && SystemEditor && (
-                    <Accordion.Panel className="property-editor-panel">
-                      <SystemEditor
-                        config={activeStateConfig}
-                        targetType={targetType}
-                        onChange={(config) => patchStateConfig(config)}
-                      />
-                    </Accordion.Panel>
-                  )}
-                </Accordion.Item>
-              </Accordion>
+              {propertyGroups.map(({ category, items }) => (
+                // `property-group` so `App.css` can tell the last group
+                // from the rest — see its own rule on the room an opened
+                // row leaves below itself.
+                <Box key={category} className="property-group">
+                  <GroupLabel>{category}</GroupLabel>
+                  {/* One accordion per group rather than one for the
+                      whole list: what's open in a group is its own
+                      business, and the rule each list closes itself with
+                      at the top is drawn on its own first item (see
+                      `.property-accordion` in `App.css`). */}
+                  <Accordion multiple className="property-accordion">
+                    {items.map(renderInstance)}
+                    {category === systemCategory && systemItem}
+                  </Accordion>
+                </Box>
+              ))}
             </Stack>
           )}
         </Tabs.Panel>

@@ -150,6 +150,25 @@ export function useDisplayGrid(params: {
     setDisplaySelected(false);
   }
 
+  // "This is the selection now", with none of `selectCell`'s own
+  // click-to-toggle: a drop — or a drag on its way to one — is never a
+  // request to deselect whatever it lands on, which is exactly what
+  // `selectCell` would do to a cell that already was the selection.
+  function focusCell(index: number) {
+    setSelectedCellIndices([index]);
+    setSelectedDivisionIndices([]);
+    setSelectedEmptyRow(null);
+    setDisplaySelected(false);
+  }
+
+  /** `focusCell` for one division of a divided cell. */
+  function focusDivision(ref: { parentId: number; subId: number }) {
+    setSelectedCellIndices([ref.parentId]);
+    setSelectedDivisionIndices([ref.subId]);
+    setSelectedEmptyRow(null);
+    setDisplaySelected(false);
+  }
+
   // Cmd/Ctrl+click on a cell — toggles `index` in or out of the current
   // multi-selection, unless the previous selection was of a different
   // kind entirely (a division, empty space, the display), in which case it
@@ -956,7 +975,7 @@ export function useDisplayGrid(params: {
     pluginId: string,
     defaultConfig: Record<string, unknown>,
   ) {
-    selectCell(index);
+    focusCell(index);
     const cell = cells[index];
     if (cell?.typeId === pluginId) return;
     if (cell?.typeId) {
@@ -979,7 +998,7 @@ export function useDisplayGrid(params: {
     pluginId: string,
     defaultConfig: Record<string, unknown>,
   ) {
-    selectDivision({ parentId, subId });
+    focusDivision({ parentId, subId });
     const divCell = cells[parentId]?.divide?.cells[subId];
     if (divCell?.typeId === pluginId) return;
     if (divCell?.typeId) {
@@ -1048,8 +1067,10 @@ export function useDisplayGrid(params: {
     // selection actions
     selectDisplay,
     selectCell,
+    focusCell,
     toggleCellSelection,
     selectDivision,
+    focusDivision,
     toggleDivisionSelection,
     selectEmptyRow,
     clearCellSelection,

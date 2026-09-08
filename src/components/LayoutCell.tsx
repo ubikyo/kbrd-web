@@ -1,11 +1,17 @@
 import { useId } from "react";
 import type { DragEvent, MouseEvent, PointerEvent } from "react";
 
+// The dash pattern each of `kbrd.render-key`'s three border styles draws
+// as — from the same control that previews them in the Properties tab, so
+// the cell can't drift from its own preview.
+import { BORDER_DASHES } from "@kbrd/plugins/web";
+
 import { pluginById } from "../plugins/registry";
 import { DEFAULT_STATE_NAME } from "../classes/inspectorHelpers";
 import { stateConfig } from "../plugins/state";
 import type { KeyPlugin } from "../types/layer";
 import type { CellRect } from "../utils/layout";
+import type { KeyLook } from "../utils/keyProperties";
 
 const LABEL_FONT_SIZE_MM = 2.5;
 // Vertical spacing between the label's own lines (size, Layout plugin
@@ -96,13 +102,24 @@ type Props = {
   // doesn't (see `Display`'s own `mode` prop).
   showText?: boolean;
   // The real `KeyPlugin` instances attached to this cell's own `keyRef`
-  // (see `GridCell.keyRef`) — already resolved and sorted by `Display`,
+  // (see `GridCell.keyRef`) — front to back, i.e. in the Plugins tab's own
+  // order, where the topmost row is the frontmost element (this paints
+  // them in reverse for that reason). Already resolved and sorted by
+  // `Display`,
   // which is the one that actually knows about `layer.plugins`. Drawn in
   // Mapping mode in place of the text label, each one's own `Renderer`
   // clipped to this cell's shape — the resting ("up") look only, no
   // press/down-state simulation (unlike `<Preview>`'s own interactive
   // keyboard, nothing here fakes pressing a key).
   keyPlugins?: KeyPlugin[];
+  // This cell's own look, from the `kbrd.render-key` row of the Properties
+  // tab (its Background and Border groups) — resolved by `Display`, the
+  // one that knows about `layer.key_properties`. Undefined leaves the cell
+  // with the grid's own chrome (a transparent fill and the dashed outline
+  // below), which is also what an untouched key gets: Mapping mode's own
+  // look, since Layout mode is about the grid rather than about how a key
+  // is painted.
+  look?: KeyLook;
   onClick?: (event: MouseEvent<SVGGElement>) => void;
   // Right-click — opens this cell's own context menu (see `App`'s
   // `contextMenu`), after selecting it the same way a left click does.
@@ -137,6 +154,7 @@ export default function LayoutCell({
   showBorder = true,
   showText = true,
   keyPlugins = [],
+  look,
   onClick,
   onContextMenu,
   onDragOver,
@@ -161,18 +179,34 @@ export default function LayoutCell({
     typeof unit === "number" ? `${unit}U` : null,
     type?.name ?? null,
   ].filter((line): line is string => Boolean(line));
+  // The key's own border, whenever it has one and nothing louder is
+  // being said over it: a highlight (selection, either drop target) is
+  // still the one thing that wins the outline, the same way it already
+  // wins it from the grid's own chrome.
+  const isHighlighted = isSelected || isDropTarget || isMoveTarget;
+  const ownBorder = !isHighlighted && look?.borderEnabled ? look : null;
   const shapeProps = {
-    fill: isDropTarget || isMoveTarget ? TARGET_FILL : "transparent",
+    fill: isDropTarget || isMoveTarget
+      ? TARGET_FILL
+      : (look?.backgroundColor ?? "transparent"),
     // `mergedOutline` can trace a shape wrapped all the way around a cell
     // that wasn't merged in, coming out as an outer subpath plus an inner
     // one for the hole — `evenodd` is what tells a filled version of that
     // shape to punch the hole rather than fill straight through it.
     fillRule: "evenodd" as const,
-    stroke,
-    strokeWidth: showBorder ? 1 : 0,
+    stroke: ownBorder ? ownBorder.borderColor : stroke,
+    // A real border of its own draws regardless of `showBorder`, which
+    // only ever suppresses the *chrome* outline (see its own docblock: a
+    // division whose dashed edge `Display` dedupes into one shared pass —
+    // nothing it can dedupe a per-key border into).
+    strokeWidth: ownBorder ? ownBorder.borderWidth : showBorder ? 1 : 0,
     // Selected stays dashed for empty space — there's no real cell there
     // yet, only a spot something could still be merged or pasted into.
-    strokeDasharray: isSelected && !isEmpty ? undefined : "4 3",
+    strokeDasharray: ownBorder
+      ? BORDER_DASHES[ownBorder.borderStyle]
+      : isSelected && !isEmpty
+        ? undefined
+        : "4 3",
     vectorEffect: "non-scaling-stroke" as const,
   };
 
@@ -227,7 +261,14 @@ export default function LayoutCell({
             </clipPath>
           </defs>
           <g clipPath={`url(#${clipId})`} style={{ pointerEvents: "none" }}>
-            {keyPlugins.map((instance) => {
+            {/* Painted back to front: the Plugins/Properties list reads
+                top = frontmost (see `keyPlugins`), and SVG has no
+                z-index — whatever is drawn last is what ends up on top.
+                So the list's own order is walked in reverse here, which
+                also puts `kbrd.render-key` (pinned last in that list, and
+                drawn as the cell's own shape above) behind every plugin
+                attached to it. */}
+            {[...keyPlugins].reverse().map((instance) => {
               const plugin = pluginById(instance.plugin_id);
               if (!plugin) return null;
               const Renderer = plugin.Renderer;

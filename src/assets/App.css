@@ -42,11 +42,22 @@ body.debug * {
   user-select: auto;
 }
 
+/* The heading owns the whole row's padding — its grip, control and
+   buttons all sit flush inside it (see `.mantine-Accordion-control`
+   below), so the 10px is stated once here rather than per child. */
 .inspector-accordion-heading {
   background: var(--kbrd-color-body);
   transition: background-color 120ms ease;
+  padding: 10px;
 }
 
+.inspector-accordion-heading .mantine-Accordion-control {
+  padding: 0;
+}
+
+/* An opened item's heading is underlined in the app's white line, not the
+   grey the rows are separated by: it is what says "this is the one that's
+   open", and it has to read louder than the list around it. */
 .mantine-Accordion-item[data-active]
   > .inspector-accordion-heading {
   border-bottom: 2px solid var(--kbrd-border-alt);
@@ -56,19 +67,37 @@ body.debug * {
   border-bottom-color: transparent;
 }
 
+/* The rule between items — and the one closing the list below — is the
+   app's own line, not Mantine's dark-scheme grey, so both Inspector lists
+   are drawn in the same colour. Set on the item itself: that is where
+   Mantine declares the variable, and a value declared on an element beats
+   one inherited from its parent. */
+.property-accordion > .mantine-Accordion-item {
+  --item-border-color: var(--kbrd-border-color);
+}
+
 /* Mantine only draws the separator *below* each item, so the first one
    opens with no line above it — this closes the list at the top with the
-   same border (`--item-border-color` is the accordion's own). */
+   same border. */
 .property-accordion > .mantine-Accordion-item:first-of-type {
   border-top: 1px solid var(--item-border-color);
 }
 
-/* An opened item gets room below itself, to set it apart from the item
-   that follows — the last one has nothing after it to separate from, so
-   it stays flush against the bottom of the list. */
-.property-accordion > .mantine-Accordion-item[data-active]:not(:last-of-type),
-.plugin-accordion > .mantine-Accordion-item[data-active]:not(:last-of-type) {
+/* An opened item gets room below itself, to set it apart from whatever
+   follows it — the next row, or the next group's own label. */
+.property-accordion > .mantine-Accordion-item[data-active] {
   padding-bottom: 40px;
+}
+
+/* Except the very last row of the tab: nothing comes after it to be set
+   apart from, so it stays flush against the bottom of the panel. The
+   groups are the Properties list's own children, so the last group is
+   the last of them (the state picker rides above them all, absolutely
+   positioned — see `Inspector`). */
+.property-group:last-child
+  > .property-accordion
+  > .mantine-Accordion-item[data-active]:last-of-type {
+  padding-bottom: 0;
 }
 
 .inspector-accordion-heading:hover {
@@ -81,11 +110,10 @@ body.debug * {
 
 .inspector-accordion-heading .mantine-Accordion-label {
   font-weight: 400;
-}
-
-.plugin-category-panel .mantine-Accordion-content {
-  padding-inline: 0;
-  padding-bottom: 0;
+  /* Mantine pads its label as well as its control; with the heading now
+     stating the row's own 10px, that padding is only height the row
+     doesn't need. */
+  padding: 0;
 }
 
 .inspector-tabs > .mantine-Tabs-list > .mantine-Tabs-tab[data-active] {
@@ -93,6 +121,28 @@ body.debug * {
   z-index: 1;
   border-bottom-color: var(--kbrd-color-body);
   color: white;
+}
+
+/* The tab strip runs edge to edge in the panel, so the active tab's outer
+   side has no panel gutter to sit in: its outer border and rounded corner
+   would read as a box floating against the panel edge. Hide them so each
+   active tab only draws the edges that separate it from its neighbour and
+   from the content below — hidden by colour rather than by `border: none`,
+   which would drop a pixel of width and shift the label sideways as the
+   tab activates (Mantine keeps the same border box on inactive tabs and
+   only makes it transparent). */
+.inspector-tabs
+  > .mantine-Tabs-list
+  > .mantine-Tabs-tab[data-active]:first-of-type {
+  border-left-color: transparent;
+  border-top-left-radius: 0;
+}
+
+.inspector-tabs
+  > .mantine-Tabs-list
+  > .mantine-Tabs-tab[data-active]:last-of-type {
+  border-right-color: transparent;
+  border-top-right-radius: 0;
 }
 
 .mantine-Input-input {

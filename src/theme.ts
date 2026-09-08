@@ -89,6 +89,12 @@ export const cssVariablesResolver: CSSVariablesResolver = () => ({
     "--kbrd-color-surface": "#222120",
     "--kbrd-border-color": "#333333",
     "--kbrd-border-alt": "#FFFFFF",
+    // What "this is the one" is drawn in: a selected cell's outline in
+    // `<Display>`, the drop mark a reordered property lands on. The SVG
+    // strokes in `LayoutCell`/`Display` still carry the literal — a
+    // presentation attribute can't read a custom property — so the two
+    // have to stay in step.
+    "--kbrd-color-selected": "#00FF00",
   },
   light: {},
   // Mantine's own dark-7 default doesn't match the pure black this app

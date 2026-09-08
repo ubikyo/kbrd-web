@@ -28,15 +28,22 @@ export type KeyMode = "momentary" | "toggle";
 // own `config.states` (see `plugins/state.ts`) carries one of these per
 // state name too, so the whole key's content — system look and every
 // plugin's fields alike — pivots together on whichever state is active.
+//
+// This is the *stored* shape, which is why every field is optional: an
+// absent one means the state says nothing about that property, so the
+// value comes from `kbrd.render-key`'s own `defaultConfig` (see its
+// `plugin.json`, and `RenderKeyConfig` for the complete shape its editor
+// actually receives). That's what makes closing a property group work —
+// it deletes the fields rather than freezing today's values into the
+// config, so re-opening the group starts from the plugin's defaults
+// again. Same arrangement as any attached plugin instance, which stores
+// `{}` until something is set.
 export type KeyStateConfig = {
-  // Optional, like `borderEnabled` governs `border*` below — `undefined`
-  // means the property genuinely isn't set (see `PropertyGroup`), not
-  // "unset, so treat it as transparent/default".
   backgroundColor?: string;
-  borderEnabled: boolean;
-  borderColor: string;
-  borderStyle: BorderStyleValue;
-  borderWidth: number;
+  borderEnabled?: boolean;
+  borderColor?: string;
+  borderStyle?: BorderStyleValue;
+  borderWidth?: number;
 };
 
 export type KeyPropertyConfig = {

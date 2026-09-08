@@ -126,6 +126,11 @@ export function useKeyInspector(params: {
     storedActiveState && propertyConfig.states.includes(storedActiveState)
       ? storedActiveState
       : (propertyConfig.states[0] ?? DEFAULT_STATE_NAME);
+  // What the active state actually *stores* for the element's own look —
+  // usually a subset, sometimes nothing at all. The complete view the
+  // system editor renders from is this merged over
+  // `kbrd.render-key`'s `defaultConfig`, which `Inspector` assembles the
+  // same way it does for any plugin instance.
   const activeStateConfig =
     propertyConfig.stateConfigs[activeState] ?? DEFAULT_STATE_CONFIG;
 
@@ -149,14 +154,15 @@ export function useKeyInspector(params: {
     );
   }
 
-  // Patches only the currently active state's own background/border
-  // fields — the system row's equivalent of a plugin's `withStateConfig`.
-  function patchStateConfig(data: Partial<KeyStateConfig>) {
+  // Replaces the currently active state's own stored look outright — the
+  // system row's equivalent of a plugin's `withStateConfig`. A *replace*
+  // rather than a merge, because a field that's gone from `config` is the
+  // whole point: that's how closing a property group hands the property
+  // back to `kbrd.render-key`'s own `defaultConfig` (see `KeyStateConfig`).
+  // A merge could only ever add fields, never let one go.
+  function setStateConfig(config: KeyStateConfig) {
     patchKeyProperty({
-      stateConfigs: {
-        ...propertyConfig.stateConfigs,
-        [activeState]: { ...activeStateConfig, ...data },
-      },
+      stateConfigs: { ...propertyConfig.stateConfigs, [activeState]: config },
     });
   }
 
@@ -175,8 +181,8 @@ export function useKeyInspector(params: {
 
   // Adds a new state named `name` to this key — the system row and every
   // attached plugin instance alike — seeded from `copyFrom`'s own current
-  // values where given, or each one's own defaults otherwise (never left
-  // blank, which would show every field as invalid right away).
+  // values where given, and otherwise storing nothing at all, so each one
+  // shows its own plugin's defaults (see `DEFAULT_STATE_CONFIG`).
   function addState(name: string, copyFrom: string | null) {
     if (!layer || !selectedKey) return;
     const trimmed = name.trim();
@@ -335,7 +341,7 @@ export function useKeyInspector(params: {
     // mutations
     setActiveState,
     patchKeyProperty,
-    patchStateConfig,
+    setStateConfig,
     addState,
     renameState,
     deleteState,

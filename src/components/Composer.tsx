@@ -452,11 +452,13 @@ export default function Composer({
         mergeGroups={grid.mergeGroups}
         selectedCellIndices={grid.selectedCellIndices}
         onSelectCell={grid.selectCell}
+        onFocusCell={grid.focusCell}
         onToggleCell={grid.toggleCellSelection}
         selectedEmptyRow={grid.selectedEmptyRow}
         onSelectEmpty={grid.selectEmptyRow}
         selectedDivisionIndices={grid.selectedDivisionIndices}
         onSelectDivision={grid.selectDivision}
+        onFocusDivision={grid.focusDivision}
         onToggleDivision={grid.toggleDivisionSelection}
         isDisplaySelected={grid.displaySelected}
         onSelectDisplay={grid.selectDisplay}

@@ -33,6 +33,8 @@ import {
   type CellRect,
 } from "../utils/layout";
 import { randomId } from "../utils/id";
+import { keyLook } from "../utils/keyProperties";
+import type { KeyLook } from "../utils/keyProperties";
 import LayoutCellDivision from "./LayoutCellDivision";
 import LayoutCell, { ResizeGrip } from "./LayoutCell";
 
@@ -117,6 +119,10 @@ type Props = LayoutSettings & {
   // flow.
   selectedCellIndices: number[];
   onSelectCell: (index: number | null) => void;
+  // "Make this the selection", with none of `onSelectCell`'s own
+  // click-to-toggle — what a drop, and a drag on its way to one, wants:
+  // see `focusCell` in `useDisplayGrid`.
+  onFocusCell: (index: number) => void;
   onToggleCell: (index: number) => void;
   // A row's trailing empty space (or a fully empty row), selected instead
   // of a real cell — mutually exclusive with `selectedCellIndices`. Lets a
@@ -130,6 +136,8 @@ type Props = LayoutSettings & {
   // `selectedCellIndices`, just scoped to this one cell's own divisions.
   selectedDivisionIndices: number[];
   onSelectDivision: (ref: DivisionRef) => void;
+  // `onFocusCell` for one division of a divided cell.
+  onFocusDivision: (ref: DivisionRef) => void;
   onToggleDivision: (ref: DivisionRef) => void;
   // The physical screen itself (the white outline) selected as its own
   // target — mutually exclusive with a cell — for `App`'s Layout/Layer
@@ -220,11 +228,13 @@ export default function Display({
   mergeGroups,
   selectedCellIndices,
   onSelectCell,
+  onFocusCell,
   onToggleCell,
   selectedEmptyRow,
   onSelectEmpty,
   selectedDivisionIndices,
   onSelectDivision,
+  onFocusDivision,
   onToggleDivision,
   isDisplaySelected,
   onSelectDisplay,
@@ -369,8 +379,8 @@ export default function Display({
     pluginCount: (target) => pluginCountFor(keyRefFor(target)),
     onSelectStart: (target) => {
       if (isSelectedTarget(target)) return;
-      if (target.kind === "cell") onSelectCell(target.id);
-      else onSelectDivision({ parentId: target.parentId, subId: target.subId });
+      if (target.kind === "cell") onFocusCell(target.id);
+      else onFocusDivision({ parentId: target.parentId, subId: target.subId });
     },
     onMoveKey: (source, dest) => {
       const sourceKeyRef = ensureKeyRef(source);
@@ -381,8 +391,8 @@ export default function Display({
       // `handleCellDrop`/`handleDivisionDrop`'s own `onSelectCell`/
       // `onSelectDivision` calls) — not the source, which just lost its
       // content.
-      if (dest.kind === "cell") onSelectCell(dest.id);
-      else onSelectDivision({ parentId: dest.parentId, subId: dest.subId });
+      if (dest.kind === "cell") onFocusCell(dest.id);
+      else onFocusDivision({ parentId: dest.parentId, subId: dest.subId });
     },
   });
 
@@ -414,6 +424,16 @@ export default function Display({
     return layer.plugins
       .filter((instance) => instance.enabled && instance.key_ref === keyRef)
       .sort((a, b) => a.position - b.position);
+  }
+
+  // This cell/division's own look for its resting state: the Background
+  // and Border groups of its `kbrd.render-key` row in the Properties tab
+  // (see `keyLook`), which is what the key is actually painted with.
+  // Mapping mode only — Layout mode is about the grid's own disposition,
+  // and already shows neither a key's content nor its paint.
+  function keyLookFor(keyRef: string | null | undefined): KeyLook | undefined {
+    if (mode === "layout" || !layer) return undefined;
+    return keyLook(layer.key_properties, keyRef) ?? undefined;
   }
 
   // Whether `keyRef` has *any* Mapping content at all — including a
@@ -450,23 +470,6 @@ export default function Display({
           selectedDivisionIndices[0] === target.subId;
   }
 
-  // Whether `keyRef` already has a real `pluginId` instance attached —
-  // `handleCellDrop`/`handleDivisionDrop` below use this (not the cell's
-  // own `pluginIds`, a client-only list of every id *ever* dropped there)
-  // to decide whether dropping the same plugin again is a no-op. `pluginIds`
-  // is never cleared by Delete/Move/Paste-overwrite (see `Composer`'s own
-  // Mapping operations), so a division that once had, say, "Label" and had
-  // it removed since would otherwise still read as "already has Label" —
-  // silently rejecting every further drop of it, real content or not.
-  function hasPlugin(keyRef: string | null | undefined, pluginId: string): boolean {
-    return Boolean(
-      keyRef &&
-        layer?.plugins.some(
-          (instance) => instance.key_ref === keyRef && instance.plugin_id === pluginId,
-        ),
-    );
-  }
-
   // Actually creates the real `KeyPlugin` record a Render/Invoke plugin
   // dropped onto a Key cell/division in Mapping mode attaches to — see
   // `handleCellDrop`/`handleDivisionDrop`. `keyRef` is whatever the target
@@ -491,11 +494,34 @@ export default function Display({
     onChangePlugins([...layer.plugins, created]);
   }
 
+  // Whether `index` (optionally one of its divisions) is *already* the
+  // whole selection — see the two `dragover` handlers below.
+  function isFocused(index: number, subId?: number): boolean {
+    if (selectedCellIndices.length !== 1 || selectedCellIndices[0] !== index) {
+      return false;
+    }
+    return subId === undefined
+      ? selectedDivisionIndices.length === 0
+      : selectedDivisionIndices.length === 1 &&
+          selectedDivisionIndices[0] === subId;
+  }
+
   function handleCellDragOver(id: number, event: DragEvent<SVGGElement>) {
     if (!event.dataTransfer.types.includes(PLUGIN_DRAG_TYPE)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     setDropTarget({ kind: "cell", id });
+    // Whatever is in hand is about to land here, so the Inspector should
+    // already be showing this cell rather than only catching up on the
+    // drop — dragging over a cell *is* aiming at it. `onFocusCell`, not
+    // `onSelectCell`: dragging onto the cell that happens to be selected
+    // already must not toggle it off (see `focusCell`).
+    //
+    // Guarded because `dragover` keeps firing for as long as the pointer
+    // sits there, and each write would be a fresh selection array — one
+    // re-render per event, all the way through the drag.
+    const primary = primaryOf(id, mergeGroups);
+    if (!isFocused(primary)) onFocusCell(primary);
   }
 
   function sameDropTarget(a: DropTarget, b: DropTarget): boolean {
@@ -564,11 +590,10 @@ export default function Display({
     }
 
     const cell = cells[primary];
-    if (
-      plugin.category === "Layout" ||
-      !isMappingTarget(cell?.typeId) ||
-      hasPlugin(cell.keyRef, plugin.id)
-    ) {
+    // Nothing about a key limits it to one instance per plugin: two
+    // labels, a label over three rectangles — each drop is its own
+    // instance, stacked by `position` (see `keyPluginsFor`).
+    if (plugin.category === "Layout" || !isMappingTarget(cell?.typeId)) {
       return;
     }
     // A cell saved before `GridCell.keyRef` existed has none yet — mint
@@ -577,9 +602,17 @@ export default function Display({
     const keyRef = cell.keyRef ?? randomId();
     onCellsChange((current) => ({
       ...current,
-      [primary]: { ...cell, keyRef, pluginIds: [...cell.pluginIds, plugin.id] },
+      [primary]: {
+        ...cell,
+        keyRef,
+        // Which kinds of plugin this cell has, not how many of each: the
+        // real instances (and their count) live in `layer.plugins`.
+        pluginIds: cell.pluginIds.includes(plugin.id)
+          ? cell.pluginIds
+          : [...cell.pluginIds, plugin.id],
+      },
     }));
-    onSelectCell(primary);
+    onFocusCell(primary);
     void attachMappingPlugin(keyRef, plugin.id);
   }
 
@@ -665,6 +698,9 @@ export default function Display({
     event.preventDefault();
     event.dataTransfer.dropEffect = "move";
     setDropTarget({ kind: "division", parentId, subId });
+    // Same as `handleCellDragOver` — the division being aimed at becomes
+    // the selection on the way in, and only when it isn't already.
+    if (!isFocused(parentId, subId)) onFocusDivision({ parentId, subId });
   }
 
   // Same idea as `handleCellDrop`, but writing into `cells[parentId]`'s
@@ -691,11 +727,7 @@ export default function Display({
     }
 
     const divCell = divide.cells[primary];
-    if (
-      plugin.category === "Layout" ||
-      !isMappingTarget(divCell?.typeId) ||
-      hasPlugin(divCell.keyRef, plugin.id)
-    ) {
+    if (plugin.category === "Layout" || !isMappingTarget(divCell?.typeId)) {
       return;
     }
     const keyRef = divCell.keyRef ?? randomId();
@@ -711,13 +743,20 @@ export default function Display({
             ...parent.divide,
             cells: {
               ...parent.divide.cells,
-              [primary]: { ...existing, keyRef, pluginIds: [...existing.pluginIds, plugin.id] },
+              [primary]: {
+                ...existing,
+                keyRef,
+                // See `handleCellDrop` — kinds present, not a count.
+                pluginIds: existing.pluginIds.includes(plugin.id)
+                  ? existing.pluginIds
+                  : [...existing.pluginIds, plugin.id],
+              },
             },
           },
         },
       };
     });
-    onSelectDivision({ parentId, subId: primary });
+    onFocusDivision({ parentId, subId: primary });
     void attachMappingPlugin(keyRef, plugin.id);
   }
 
@@ -913,6 +952,7 @@ export default function Display({
                           )
                         }
                         keyPluginsFor={keyPluginsFor}
+                        keyLookFor={keyLookFor}
                       />
                     );
                   }
@@ -935,6 +975,7 @@ export default function Display({
                       labelBounds={merged?.labelBounds}
                       typeId={cell?.typeId}
                       keyPlugins={keyPluginsFor(cell?.keyRef)}
+                      look={keyLookFor(cell?.keyRef)}
                       unit={hasContent ? cell?.unit : undefined}
                       isEmpty={!hasContent}
                       isSelected={selectedCellIndices.includes(primary)}

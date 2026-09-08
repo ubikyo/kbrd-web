@@ -335,9 +335,9 @@ export default function App() {
             />
           </Splitter.Pane>
           <Splitter.Pane
-            defaultSize="350px"
-            min="350px"
-            max="350px"
+            defaultSize="280px"
+            min="280px"
+            max="280px"
             style={{ padding: "40px 0 0 0" }}
           >
             <Inspector
