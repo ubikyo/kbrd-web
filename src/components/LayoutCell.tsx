@@ -48,10 +48,10 @@ const GRIP_DOT_PATHS = [
   "M14 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
   "M14 19a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
 ];
-// `theme.ts` hardcodes the Splitter thumb's own background to white,
-// overriding the app's otherwise-dark palette — the border and dot color
-// are left at Mantine's own dark-scheme defaults (see `Splitter.css`'s
-// `[data-mantine-color-scheme='dark']` rules).
+// `@kbrd/plugins/theme` hardcodes the Splitter thumb's own background to
+// white, overriding the app's otherwise-dark palette — the border and dot
+// color are left at Mantine's own dark-scheme defaults (see
+// `Splitter.css`'s `[data-mantine-color-scheme='dark']` rules).
 const GRIP_BACKGROUND = "#FFFFFF";
 
 type Props = {

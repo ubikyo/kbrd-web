@@ -3,7 +3,7 @@ import ReactDOM from "react-dom/client";
 import { MantineProvider } from "@mantine/core";
 
 import App from "./App";
-import { cssVariablesResolver, theme } from "./theme";
+import { cssVariablesResolver, theme } from "@kbrd/plugins/theme";
 
 import "@mantine/core/styles.css";
 import "./assets/App.css";
