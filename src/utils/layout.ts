@@ -398,6 +398,109 @@ export function divisionsAreContiguous(ids: number[], cols: number): boolean {
   return remaining.size === 0;
 }
 
+/** Whatever the arrow keys can move the selection onto: a top-level cell
+ * (always a merge group's own primary, the id a selection ever carries —
+ * see `primaryOf`) or one division of a divided one. */
+export type SelectionRef =
+  | { kind: "cell"; id: number }
+  | { kind: "division"; parentId: number; subId: number };
+
+/** Whether a cell/division with this Layout plugin can be selected at all
+ * right now — everything, in Layout mode; only what Mapping actually
+ * renders (`isMappingVisible`, i.e. not a Space), there. Passed in rather
+ * than read off the plugin registry so this file stays pure geometry. */
+type NavigablePredicate = (typeId: string | null | undefined) => boolean;
+
+function isSameStop(a: SelectionRef, b: SelectionRef): boolean {
+  return a.kind === "cell"
+    ? b.kind === "cell" && a.id === b.id
+    : b.kind === "division" &&
+        a.parentId === b.parentId &&
+        a.subId === b.subId;
+}
+
+/**
+ * Every place an arrow key can land, in reading order: left to right
+ * within a row, then row by row down the display — a divided cell
+ * contributing its own divisions (row-major, the order `DivideGrid` lays
+ * them out in) in its place, since a divided cell is never selectable as
+ * a whole by clicking either (see `Display`'s `handleDivisionClick`).
+ *
+ * Merge groups, at either level, appear exactly once — as their primary,
+ * at their first member's place — so a merged cell is one stop, not one
+ * per member, and stepping through the list can never bounce backwards
+ * onto a primary that sits behind the group's later members.
+ */
+function selectionStops(
+  rows: number[][],
+  cells: Record<number, GridCell>,
+  mergeGroups: MergeGroups,
+  isNavigable: NavigablePredicate,
+): SelectionRef[] {
+  const stops: SelectionRef[] = [];
+  const seen = new Set<number>();
+  for (const rowCells of rows) {
+    for (const id of rowCells) {
+      const primary = primaryOf(id, mergeGroups);
+      if (seen.has(primary)) continue;
+      seen.add(primary);
+      const divide = cells[primary]?.divide;
+      if (!divide) {
+        if (isNavigable(cells[primary]?.typeId)) {
+          stops.push({ kind: "cell", id: primary });
+        }
+        continue;
+      }
+      const seenDivisions = new Set<number>();
+      for (let subId = 0; subId < divide.cols * divide.rows; subId += 1) {
+        const subPrimary = primaryOf(subId, divide.mergeGroups);
+        if (seenDivisions.has(subPrimary)) continue;
+        seenDivisions.add(subPrimary);
+        if (isNavigable(divide.cells[subPrimary]?.typeId)) {
+          stops.push({ kind: "division", parentId: primary, subId: subPrimary });
+        }
+      }
+    }
+  }
+  return stops;
+}
+
+/**
+ * Where ← / → move the selection from `from` — the next stop over in
+ * reading order (see `selectionStops`), or `null` at the display's very
+ * first/last one, where the selection just stays put.
+ *
+ * One flat sequence rather than one row at a time, at either level: past
+ * a row's last cell comes the next row's first, and past a divided cell's
+ * last division of one internal row comes the first of the row below it,
+ * so no cell or division is ever unreachable from the keyboard — a 1×2
+ * divided cell's bottom half included.
+ */
+export function adjacentSelection(
+  from: SelectionRef,
+  direction: -1 | 1,
+  rows: number[][],
+  cells: Record<number, GridCell>,
+  mergeGroups: MergeGroups,
+  isNavigable: NavigablePredicate = () => true,
+): SelectionRef | null {
+  const stops = selectionStops(rows, cells, mergeGroups, isNavigable);
+  const at = stops.findIndex((stop) => isSameStop(stop, from));
+  if (at !== -1) return stops[at + direction] ?? null;
+
+  // `from` isn't a stop of its own — a divided cell selected as a whole
+  // (a drag can leave it that way, unlike a click), or one whose own
+  // divisions are all that's left navigable. Step into it rather than
+  // going nowhere: the first of its stops going right, the last going
+  // left, exactly where an arrow arriving from that side would land.
+  const parentId = from.kind === "cell" ? from.id : from.parentId;
+  const own = stops.filter(
+    (stop) => (stop.kind === "cell" ? stop.id : stop.parentId) === parentId,
+  );
+  if (own.length === 0) return null;
+  return direction === 1 ? own[0] : own[own.length - 1];
+}
+
 /** A point in the mm-space `mergedOutline` traces its shape in. */
 type Point = { x: number; y: number };
 

@@ -5,13 +5,14 @@ import {
   Group,
   Modal,
   NumberInput,
+  Select,
   Stack,
   Switch,
   Tabs,
   Text,
   Title,
 } from "@mantine/core";
-import { MdCode, MdStraighten } from "react-icons/md";
+import { MdCode, MdStraighten, MdTune } from "react-icons/md";
 
 import {
   FALLBACK_HEIGHT,
@@ -20,6 +21,7 @@ import {
   type DeviceStatus,
 } from "../../api/device";
 import type { LayoutSettings } from "../../types/layout";
+import type { StartupMode } from "../../utils/preferences";
 
 const DEVICE_POLL_INTERVAL_MS = 5000;
 const MM_PER_INCH = 25.4;
@@ -67,6 +69,11 @@ type Props = {
   // the `debug` body class).
   debug: boolean;
   onDebugChange: (debug: boolean) => void;
+  // The Preferences tab's "On open, open" — app-level too (see `debug`),
+  // but persisted on its own (see `utils/preferences`) since it has to
+  // survive a reload to mean anything at all.
+  startupMode: StartupMode;
+  onStartupModeChange: (mode: StartupMode) => void;
 };
 
 export default function Settings({
@@ -76,10 +83,14 @@ export default function Settings({
   onSave,
   debug,
   onDebugChange,
+  startupMode,
+  onStartupModeChange,
 }: Props) {
-  const [tab, setTab] = useState<string | null>("display");
+  const [tab, setTab] = useState<string | null>("preferences");
   const [draft, setDraft] = useState<LayoutSettings>(settings);
   const [debugDraft, setDebugDraft] = useState(debug);
+  const [startupModeDraft, setStartupModeDraft] =
+    useState<StartupMode>(startupMode);
   const [device, setDevice] = useState<DeviceStatus>({ connected: false });
 
   // Reset the draft to the last saved values whenever the modal opens back up.
@@ -87,8 +98,10 @@ export default function Settings({
   if (opened !== wasOpened) {
     setWasOpened(opened);
     if (opened) {
+      setTab("preferences");
       setDraft(settings);
       setDebugDraft(debug);
+      setStartupModeDraft(startupMode);
     }
   }
 
@@ -118,12 +131,14 @@ export default function Settings({
   function cancel() {
     setDraft(settings);
     setDebugDraft(debug);
+    setStartupModeDraft(startupMode);
     onClose();
   }
 
   function save() {
     onSave(draft);
     onDebugChange(debugDraft);
+    onStartupModeChange(startupModeDraft);
     onClose();
   }
 
@@ -187,6 +202,9 @@ export default function Settings({
           }}
         >
           <Tabs.List w={180} style={{ flexShrink: 0 }}>
+            <Tabs.Tab value="preferences" leftSection={<MdTune size={16} />}>
+              Preferences
+            </Tabs.Tab>
             <Tabs.Tab value="display" leftSection={<MdStraighten size={16} />}>
               Display
             </Tabs.Tab>
@@ -194,6 +212,31 @@ export default function Settings({
               Developer
             </Tabs.Tab>
           </Tabs.List>
+
+          <Tabs.Panel
+            value="preferences"
+            style={{ overflowY: "auto", padding: 0, paddingLeft: 40 }}
+          >
+            <Stack gap="md">
+              <Title order={4}>Preferences</Title>
+              <FieldRow label="On open, open">
+                <Select
+                  w="100%"
+                  aria-label="On open, open"
+                  allowDeselect={false}
+                  data={[
+                    { value: "layout", label: "Layout" },
+                    { value: "mapping", label: "Mapping" },
+                  ]}
+                  value={startupModeDraft}
+                  onChange={(value) => {
+                    if (value === "layout" || value === "mapping")
+                      setStartupModeDraft(value);
+                  }}
+                />
+              </FieldRow>
+            </Stack>
+          </Tabs.Panel>
 
           <Tabs.Panel
             value="display"

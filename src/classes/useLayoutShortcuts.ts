@@ -5,7 +5,8 @@ import { useEffect, useRef, useState } from "react";
  * whatever's focused: Tab toggles "Resize" (Layout-only — see
  * `resizeEnabled`), Cmd/Ctrl+Z undoes the last edit, Backspace deletes
  * whatever's selected, Cmd/Ctrl+C copies a cell, Cmd/Ctrl+V pastes into
- * empty space. Both effects skip firing while a modal has its own fields
+ * empty space, ← / → walk the selection from one cell (or division) to
+ * the next. Both effects skip firing while a modal has its own fields
  * to type/tab through, or while the user is typing into a text field
  * somewhere else (a plugin's config, a name field…) rather than working
  * the display.
@@ -46,6 +47,11 @@ export function useLayoutShortcuts(params: {
   requestDeleteDivisions: () => void;
   copySelectedCell: () => void;
   pasteToEmptyRow: () => void;
+  // Moves the selection one cell (or division) left/right — see
+  // `useDisplayGrid`'s own `selectAdjacent`, which decides what's
+  // actually next over and no-ops on anything but a single selected
+  // cell/division.
+  selectAdjacent: (direction: -1 | 1) => void;
 }) {
   const {
     mode,
@@ -64,6 +70,7 @@ export function useLayoutShortcuts(params: {
     requestDeleteDivisions,
     copySelectedCell,
     pasteToEmptyRow,
+    selectAdjacent,
   } = params;
 
   const [resizeEnabled, setResizeEnabled] = useState(false);
@@ -125,6 +132,7 @@ export function useLayoutShortcuts(params: {
     requestDeleteDivisions,
     copySelectedCell,
     pasteToEmptyRow,
+    selectAdjacent,
   });
   useEffect(() => {
     shortcutsRef.current = {
@@ -139,6 +147,7 @@ export function useLayoutShortcuts(params: {
       requestDeleteDivisions,
       copySelectedCell,
       pasteToEmptyRow,
+      selectAdjacent,
     };
   });
 
@@ -156,6 +165,7 @@ export function useLayoutShortcuts(params: {
         requestDeleteDivisions,
         copySelectedCell,
         pasteToEmptyRow,
+        selectAdjacent,
       } = shortcutsRef.current;
       const target = event.target as HTMLElement | null;
       const isTyping = Boolean(
@@ -184,6 +194,23 @@ export function useLayoutShortcuts(params: {
         return;
       }
       const withModifier = event.metaKey || event.ctrlKey;
+      // ← / → walk the selection across the display, one cell (or
+      // division of a divided one) at a time. Bare arrows only: every
+      // modified combination is left to the browser, and so is an arrow
+      // pressed with nothing but empty space selected — `selectAdjacent`
+      // has no cell to start from then, so there's nothing to swallow the
+      // key for.
+      if (
+        (event.key === "ArrowLeft" || event.key === "ArrowRight") &&
+        (hasCellSelection || hasDivisionSelection) &&
+        !withModifier &&
+        !event.altKey &&
+        !event.shiftKey
+      ) {
+        event.preventDefault();
+        selectAdjacent(event.key === "ArrowLeft" ? -1 : 1);
+        return;
+      }
       // A division being the real focus must win here — otherwise
       // Backspace would fall through to `requestDeleteCells` and delete
       // the whole divided cell, every other division along with it,

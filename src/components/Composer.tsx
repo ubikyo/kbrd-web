@@ -31,7 +31,7 @@ import type { EntityEditorsApi } from "../classes/useEntityEditors";
 import type { KeyDragTarget } from "../classes/useKeyDrag";
 import { useLayoutShortcuts } from "../classes/useLayoutShortcuts";
 import { useUndoHistory } from "../classes/useUndoHistory";
-import { isMappingTarget } from "../plugins/registry";
+import { isMappingTarget, isMappingVisible } from "../plugins/registry";
 import type { KeyPlugin, KeyProperty, LayerData } from "../types/layer";
 import type { LayoutData, LayoutSettings } from "../types/layout";
 import { randomId } from "../utils/id";
@@ -68,11 +68,13 @@ const LAYOUT_SHORTCUTS = [
   { label: "Copy cell", keys: `${MOD_KEY_LABEL}C` },
   { label: "Paste", keys: `${MOD_KEY_LABEL}V` },
   { label: "Delete selection", keys: "⌫" },
+  { label: "Move selection", keys: "← →" },
   { label: "Toggle Resize", keys: `${MOD_KEY_LABEL}Tab` },
   { label: "Undo", keys: `${MOD_KEY_LABEL}Z` },
   { label: "Switch mode", keys: "Tab" },
 ];
 const MAPPING_SHORTCUTS = [
+  { label: "Move selection", keys: "← →" },
   { label: "Undo", keys: `${MOD_KEY_LABEL}Z` },
   { label: "Switch mode", keys: "Tab" },
 ];
@@ -337,6 +339,17 @@ export default function Composer({
       mode === "layout" ? grid.requestDeleteDivisions : requestDeleteMappingSelection,
     copySelectedCell: mode === "layout" ? grid.copySelectedCell : copyMappingSelection,
     pasteToEmptyRow: mode === "layout" ? grid.pasteToEmptyRow : pasteMappingSelection,
+    // The arrows move the selection around the grid's own geometry, which
+    // both modes share — so no Mapping counterpart to swap in, just a
+    // narrower idea of what's there to land on: Mapping renders nothing
+    // at all for a Space cell/division (`isMappingVisible`), so the
+    // arrows skip straight past those rather than moving the selection
+    // somewhere invisible.
+    selectAdjacent: (direction: -1 | 1) =>
+      grid.selectAdjacent(
+        direction,
+        mode === "layout" ? undefined : isMappingVisible,
+      ),
   });
 
   // Plain Tab toggles Layout/Mapping — Cmd/Ctrl+Tab is Resize's own

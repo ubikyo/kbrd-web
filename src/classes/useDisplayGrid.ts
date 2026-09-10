@@ -15,6 +15,7 @@ import type {
 import {
   addCellToRow,
   addMerge,
+  adjacentSelection,
   canRemoveCell,
   cellRect,
   cellsAreContiguous,
@@ -527,6 +528,40 @@ export function useDisplayGrid(params: {
   // to respect the same rule rather than firing for any non-empty cell
   // selection.
   const canCopySelection = hasCellSelection && selectedCellIndices.length === 1;
+
+  // ← / → move the selection one cell (or division) over, in reading
+  // order across the whole display — see `adjacentSelection` for what
+  // counts as "over" around merges, divided cells and row ends. Only ever
+  // from a single selected cell/division: a multi-selection has no one
+  // place for an arrow to start from, so it's left alone rather than
+  // collapsed onto an arbitrary member of itself.
+  //
+  // `isNavigable` is how Mapping mode keeps the arrows off a Space cell
+  // (see `Composer`): it renders nothing at all there, so there'd be no
+  // selection to see. This hook has no `mode` of its own to decide that
+  // from — the caller passes whichever rule its mode goes by.
+  function selectAdjacent(
+    direction: -1 | 1,
+    isNavigable?: (typeId: string | null | undefined) => boolean,
+  ) {
+    if (selectedCellIndices.length !== 1 || selectedDivisionIndices.length > 1) {
+      return;
+    }
+    const parentId = selectedCellIndices[0];
+    const next = adjacentSelection(
+      selectedDivisionId !== null
+        ? { kind: "division", parentId, subId: selectedDivisionId }
+        : { kind: "cell", id: parentId },
+      direction,
+      rows,
+      cells,
+      mergeGroups,
+      isNavigable,
+    );
+    if (!next) return;
+    if (next.kind === "cell") focusCell(next.id);
+    else focusDivision(next);
+  }
 
   // "Merge" on multiple selected, mutually-contiguous top-level cells —
   // folds them all into one `mergeGroups` entry in one stroke instead of
@@ -1073,6 +1108,7 @@ export function useDisplayGrid(params: {
     focusDivision,
     toggleDivisionSelection,
     selectEmptyRow,
+    selectAdjacent,
     clearCellSelection,
     clearSelection,
 

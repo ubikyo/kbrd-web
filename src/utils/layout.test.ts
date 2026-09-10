@@ -2,6 +2,7 @@ import { expect, test } from "vitest";
 import {
   addCellToRow,
   addMerge,
+  adjacentSelection,
   canRemoveCell,
   cellRect,
   cellsAreContiguous,
@@ -29,7 +30,13 @@ import {
   rowOf,
   shareEdge,
 } from "./layout";
-import { defaultGridCell, type GridCell, type LayoutData } from "../types/layout";
+import {
+  createDivideGrid,
+  defaultDivisionCell,
+  defaultGridCell,
+  type GridCell,
+  type LayoutData,
+} from "../types/layout";
 
 const cellAt = (patch: Partial<GridCell> = {}) => ({
   ...defaultGridCell(),
@@ -540,4 +547,129 @@ test("divisionsAreContiguous checks the division grid's own row/column adjacency
   expect(divisionsAreContiguous([0, 2], 3)).toBe(false); // same row, not adjacent
   expect(divisionsAreContiguous([0, 4], 3)).toBe(false); // diagonal
   expect(divisionsAreContiguous([0, 1, 4], 3)).toBe(true); // 0-1 adjacent, 1-4 adjacent
+});
+
+test("adjacentSelection walks a row's cells left and right, and stops at the display's ends", () => {
+  const rows = gridRows(2, { 0: [1, 2], 1: [3] });
+  const cells: Record<number, GridCell> = {
+    1: cellAt({ unit: 1 }),
+    2: cellAt({ unit: 1 }),
+    3: cellAt({ unit: 1 }),
+  };
+  const at = (from: number, direction: -1 | 1) =>
+    adjacentSelection({ kind: "cell", id: from }, direction, rows, cells, []);
+
+  expect(at(1, 1)).toEqual({ kind: "cell", id: 2 });
+  expect(at(2, -1)).toEqual({ kind: "cell", id: 1 });
+  // Past a row's last cell comes the next row's first one, not a dead end.
+  expect(at(2, 1)).toEqual({ kind: "cell", id: 3 });
+  expect(at(3, -1)).toEqual({ kind: "cell", id: 2 });
+  // The very first/last cell of the display has nowhere left to go.
+  expect(at(1, -1)).toBeNull();
+  expect(at(3, 1)).toBeNull();
+});
+
+test("adjacentSelection treats a merged group as the single cell it's shown as", () => {
+  const rows = gridRows(1, { 0: [1, 2, 3] });
+  const cells: Record<number, GridCell> = {
+    1: cellAt({ unit: 1 }),
+    2: cellAt({ unit: 1 }),
+    3: cellAt({ unit: 1 }),
+  };
+  const merged = addMerge([], 1, 2);
+  // Right off the group lands past *both* its members, and coming back
+  // lands on the group's primary — the id a selection ever carries.
+  expect(
+    adjacentSelection({ kind: "cell", id: 1 }, 1, rows, cells, merged),
+  ).toEqual({ kind: "cell", id: 3 });
+  expect(
+    adjacentSelection({ kind: "cell", id: 3 }, -1, rows, cells, merged),
+  ).toEqual({ kind: "cell", id: 1 });
+});
+
+test("adjacentSelection reaches every division of a divided cell, row after row", () => {
+  const rows = gridRows(1, { 0: [1, 2] });
+  const cells: Record<number, GridCell> = {
+    // The "Divide" layout's own shape: one column, two rows — the bottom
+    // division is only ever reachable by wrapping past the top one's row.
+    1: cellAt({ unit: 1, divide: createDivideGrid(1, 2, defaultDivisionCell()) }),
+    2: cellAt({ unit: 1, divide: createDivideGrid(1, 2, defaultDivisionCell()) }),
+  };
+  const at = (parentId: number, subId: number, direction: -1 | 1) =>
+    adjacentSelection(
+      { kind: "division", parentId, subId },
+      direction,
+      rows,
+      cells,
+      [],
+    );
+
+  expect(at(1, 0, 1)).toEqual({ kind: "division", parentId: 1, subId: 1 });
+  expect(at(1, 1, 1)).toEqual({ kind: "division", parentId: 2, subId: 0 });
+  expect(at(2, 0, 1)).toEqual({ kind: "division", parentId: 2, subId: 1 });
+  expect(at(2, 1, 1)).toBeNull();
+  expect(at(2, 0, -1)).toEqual({ kind: "division", parentId: 1, subId: 1 });
+  expect(at(1, 0, -1)).toBeNull();
+});
+
+test("adjacentSelection skips a merged division's other members, like a merged cell's", () => {
+  const divide = createDivideGrid(3, 1, defaultDivisionCell());
+  const rows = gridRows(1, { 0: [1] });
+  const cells: Record<number, GridCell> = {
+    1: cellAt({ unit: 1, divide: { ...divide, mergeGroups: addMerge([], 0, 1) } }),
+  };
+  expect(
+    adjacentSelection({ kind: "division", parentId: 1, subId: 0 }, 1, rows, cells, []),
+  ).toEqual({ kind: "division", parentId: 1, subId: 2 });
+  expect(
+    adjacentSelection({ kind: "division", parentId: 1, subId: 2 }, -1, rows, cells, []),
+  ).toEqual({ kind: "division", parentId: 1, subId: 0 });
+});
+
+test("adjacentSelection enters a divided cell at the end it arrives from", () => {
+  const rows = gridRows(1, { 0: [1, 2, 3] });
+  const cells: Record<number, GridCell> = {
+    1: cellAt({ unit: 1 }),
+    // 2x2:
+    //   0 1
+    //   2 3
+    2: cellAt({ unit: 1, divide: createDivideGrid(2, 2, defaultDivisionCell()) }),
+    3: cellAt({ unit: 1 }),
+  };
+  expect(
+    adjacentSelection({ kind: "cell", id: 1 }, 1, rows, cells, []),
+  ).toEqual({ kind: "division", parentId: 2, subId: 0 });
+  expect(
+    adjacentSelection({ kind: "cell", id: 3 }, -1, rows, cells, []),
+  ).toEqual({ kind: "division", parentId: 2, subId: 3 });
+  // A divided cell selected as a whole (a drag can leave it that way)
+  // steps into its own divisions rather than going nowhere.
+  expect(
+    adjacentSelection({ kind: "cell", id: 2 }, 1, rows, cells, []),
+  ).toEqual({ kind: "division", parentId: 2, subId: 0 });
+});
+
+test("adjacentSelection skips whatever isNavigable rules out — Mapping's own Space cells", () => {
+  const rows = gridRows(1, { 0: [1, 2, 3, 4] });
+  const cells: Record<number, GridCell> = {
+    1: cellAt({ unit: 1, typeId: "kbrd.layout-key" }),
+    2: cellAt({ unit: 1, typeId: "kbrd.layout-space" }),
+    // A divided cell with nothing but Space in it is skipped whole.
+    3: cellAt({
+      unit: 1,
+      divide: createDivideGrid(2, 1, { ...defaultDivisionCell(), typeId: "kbrd.layout-space" }),
+    }),
+    4: cellAt({ unit: 1, typeId: "kbrd.layout-key" }),
+  };
+  const isKey = (typeId: string | null | undefined) => typeId === "kbrd.layout-key";
+  expect(
+    adjacentSelection({ kind: "cell", id: 1 }, 1, rows, cells, [], isKey),
+  ).toEqual({ kind: "cell", id: 4 });
+  expect(
+    adjacentSelection({ kind: "cell", id: 4 }, -1, rows, cells, [], isKey),
+  ).toEqual({ kind: "cell", id: 1 });
+  // Same cells, no rule: every one of them is a stop again.
+  expect(
+    adjacentSelection({ kind: "cell", id: 1 }, 1, rows, cells, []),
+  ).toEqual({ kind: "cell", id: 2 });
 });

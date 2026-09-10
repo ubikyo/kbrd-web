@@ -30,7 +30,11 @@ export default defineConfig({
         // Without this bypass those requests would be proxied to
         // KBRD-API instead of served by Vite, and 404.
         bypass(req) {
-          if (req.url?.endsWith(".ts") || req.url?.endsWith(".tsx")) {
+          // Strip the query first: HMR re-requests carry a cache-busting
+          // `?t=<timestamp>`, so testing the raw URL would miss them and
+          // proxy the module to KBRD-API on every hot update.
+          const path = req.url?.split("?", 1)[0];
+          if (path?.endsWith(".ts") || path?.endsWith(".tsx")) {
             return req.url;
           }
         },

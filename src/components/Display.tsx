@@ -38,7 +38,7 @@ import type { KeyLook } from "../utils/keyProperties";
 import LayoutCellDivision from "./LayoutCellDivision";
 import LayoutCell, { ResizeGrip } from "./LayoutCell";
 
-const PADDING = 60;
+const PADDING = 80;
 const PLUGIN_DRAG_TYPE = "application/kbrd-plugin";
 // Same green `LayoutCell` uses for a selected cell.
 const DISPLAY_SELECTED_STROKE = "#00ff00";

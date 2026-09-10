@@ -33,7 +33,7 @@ import type { KeyPlugin, KeyProperty, LayerData } from "../types/layer";
 // grow its rows, so it states the same height by hand. `ROW_RULE` is the
 // 1px each row is closed with: Mantine draws it on the accordion item,
 // *outside* the heading, while a Plugins row draws it on itself.
-const GROUP_LABEL_SPACE = 26;
+const GROUP_LABEL_SPACE = 45;
 // How far above the first group's label row the state picker sits — it
 // belongs to the key, not to the group it would otherwise share a line
 // with. Absolutely positioned, so this moves the picker alone.
@@ -424,7 +424,7 @@ export default function Inspector({
           <Tabs.Tab value="properties">Properties</Tabs.Tab>
         </Tabs.List>
 
-        <Tabs.Panel value="plugins" pt="lg" pb="lg">
+        <Tabs.Panel value="plugins" pb="lg">
           {!layer ? (
             <Text c="dimmed">
               {hasLayout
@@ -519,10 +519,10 @@ export default function Inspector({
           )}
         </Tabs.Panel>
 
-        <Tabs.Panel value="properties" pt="lg" pb="lg">
+        <Tabs.Panel value="properties" pb="lg">
           {mode === "layout" ? (
             !layoutSelection ? (
-              <Text c="dimmed">No item selected</Text>
+              <Text c="dimmed" p="40px">No item selected</Text>
             ) : (
               <LayoutCellProperties
                 cell={layoutSelection.cell}
@@ -532,7 +532,7 @@ export default function Inspector({
               />
             )
           ) : !selectedKey ? (
-            <Text c="dimmed">No item selected</Text>
+            <Text c="dimmed" p="40px">No item selected</Text>
           ) : (
             <Stack key={selectedKey} gap={0} style={{ position: "relative" }}>
               {/* The state picker takes no row of its own — the Plugins

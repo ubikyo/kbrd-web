@@ -5,7 +5,6 @@ import {
   Button,
   Group,
   Modal,
-  Splitter,
   Stack,
   Text,
 } from "@mantine/core";
@@ -32,6 +31,11 @@ import type { LayerData } from "./types/layer";
 import { useDisplayGrid } from "./classes/useDisplayGrid";
 import { useDisplaySettings } from "./classes/useDisplaySettings";
 import { useEntityEditors } from "./classes/useEntityEditors";
+import {
+  loadStartupMode,
+  saveStartupMode,
+  type StartupMode,
+} from "./utils/preferences";
 
 // How long `<Display>`'s grid sits idle before its disposition is
 // autosaved onto the current layout — see the effect below.
@@ -63,6 +67,14 @@ export default function App() {
   // Which form the Inspector's plugin editors show — see `mode` on
   // `Inspector`'s props and each plugin's `LayoutEditor`/`MappingEditor`.
   const [mode, setMode] = useState<"layout" | "mapping">("layout");
+
+  // Settings' Preferences tab — "On open, open". Mapping mode only means
+  // anything once a layout is actually loaded (it maps *that* layout's
+  // keys), so "Mapping" is applied on the first layout to arrive rather
+  // than at mount, and only ever once: switching layouts afterwards must
+  // not drag the user back out of whichever mode they've since picked.
+  const [startupMode, setStartupMode] = useState<StartupMode>(loadStartupMode);
+  const startupModeApplied = useRef(false);
 
   const [inspectorTab, setInspectorTab] = useState<string | null>("plugins");
   // Settings' Developer tab — on for now, while the app is still being
@@ -114,6 +126,12 @@ export default function App() {
       grid.divisionSelection?.cell.typeId ?? grid.layoutSelection?.cell.typeId ?? null,
     );
   }, [mode, grid.divisionSelection, grid.layoutSelection]);
+
+  useEffect(() => {
+    if (startupModeApplied.current || layout == null) return;
+    startupModeApplied.current = true;
+    if (startupMode === "mapping") setMode("mapping");
+  }, [layout, startupMode]);
 
   const entityEditors = useEntityEditors({ layout, layer, layoutItems, layerItems });
 
@@ -288,6 +306,11 @@ export default function App() {
         onSave={saveDisplaySettings}
         debug={debug}
         onDebugChange={setDebug}
+        startupMode={startupMode}
+        onStartupModeChange={(next) => {
+          setStartupMode(next);
+          saveStartupMode(next);
+        }}
       />
 
       <AppShell.Main
@@ -296,22 +319,17 @@ export default function App() {
           height: "100vh",
         }}
       >
-        {/* Resizing is switched off for now: `withHandle` drops the grip
-            thumb, and the Inspector pane's `max` pinned to its `min` below
-            leaves the handle nothing to move. Drop both to bring dragging
-            back. */}
-        <Splitter
-          orientation="horizontal"
-          lineSize={1}
-          handleColor="var(--kbrd-border-color)"
-          withHandle={false}
+        {/* Two fixed blocks: the Composer takes whatever's left, the
+            Inspector always 280px. */}
+        <Box
           style={{
             position: "relative",
+            display: "flex",
             height: "calc(100vh - 64px)",
             overflow: "hidden",
           }}
         >
-          <Splitter.Pane defaultSize={75} min={40}>
+          <Box style={{ flex: 1, minWidth: 0, height: "100%" }}>
             <Composer
               layoutSettings={layoutSettings}
               mode={mode}
@@ -333,12 +351,15 @@ export default function App() {
               onChangeLayer={changeLayer}
               onLayerItemsChange={setLayerItems}
             />
-          </Splitter.Pane>
-          <Splitter.Pane
-            defaultSize="280px"
-            min="280px"
-            max="280px"
-            style={{ padding: "40px 0 0 0" }}
+          </Box>
+          <Box
+            style={{
+              flex: "0 0 280px",
+              width: 280,
+              height: "100%",
+              padding: "40px 0 0 0",
+              borderLeft: "1px solid var(--kbrd-border-color)",
+            }}
           >
             <Inspector
               layer={layer}
@@ -362,8 +383,8 @@ export default function App() {
               onChange={changePlugins}
               onKeyPropertiesChange={changeKeyProperties}
             />
-          </Splitter.Pane>
-        </Splitter>
+          </Box>
+        </Box>
       </AppShell.Main>
       {entityEditors.layoutEditorOpened && (
         <LayoutEditor
