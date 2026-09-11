@@ -485,7 +485,10 @@ export default function Composer({
           style={{
             position: "absolute",
             top: 20,
-            right: 20,
+            // Clear of the Inspector's own tab, which reaches into this
+            // area from the right edge while the panel is open (see
+            // `.inspector-tab` in App.css).
+            right: 40,
             zIndex: 20,
           }}
         >

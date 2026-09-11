@@ -130,7 +130,7 @@ body.debug * {
   padding: 0;
 }
 
-.inspector-tabs > .mantine-Tabs-list > .mantine-Tabs-tab[data-active] {
+.panel-tabs > .mantine-Tabs-list > .mantine-Tabs-tab[data-active] {
   position: relative;
   z-index: 1;
   border-bottom-color: var(--kbrd-color-body);
@@ -145,14 +145,14 @@ body.debug * {
    which would drop a pixel of width and shift the label sideways as the
    tab activates (Mantine keeps the same border box on inactive tabs and
    only makes it transparent). */
-.inspector-tabs
+.panel-tabs
   > .mantine-Tabs-list
   > .mantine-Tabs-tab[data-active]:first-of-type {
   border-left-color: transparent;
   border-top-left-radius: 0;
 }
 
-.inspector-tabs
+.panel-tabs
   > .mantine-Tabs-list
   > .mantine-Tabs-tab[data-active]:last-of-type {
   border-right-color: transparent;
@@ -254,6 +254,201 @@ body.debug * {
      and so earlier in tree order than the content it has to show in
      front of. The scrollbar itself is lifted one higher (see
      `Inspector`), so it still covers the rule while scrolling. */
+  z-index: 1;
+}
+
+/* Both side panels work the same way: a track (`.media-panel` /
+   `.inspector-panel`) that is a flex item whose basis goes 0 → the panel's
+   own width, and the panel inside it, which keeps that full width the whole
+   time and is simply pushed a full width off its own edge while closed —
+   so it slides in rather than stretching. Both run at the same rate, which
+   keeps the panel's inner edge exactly on the track's own: it never
+   overlaps the Composer on the way. Nothing clips them here — while out of
+   view they're past the edge of `App`'s own `overflow: hidden` main row —
+   which is what lets each tab stick out of its panel. */
+.media-panel,
+.inspector-panel {
+  flex-grow: 0;
+  flex-shrink: 0;
+  height: 100%;
+  /* Load-bearing: a flex item's `min-width` defaults to `auto`, which
+     floors it at its own content's width — the panel inside is always its
+     full width, so the track would never actually collapse and the
+     Composer would never get the room back. (An `overflow` other than
+     `visible` would zero that floor too, but these have to let their tab
+     stick out.) */
+  min-width: 0;
+  /* Lifted over the Composer, which would otherwise paint over the one
+     part of either panel that reaches into its area: the tab, once the
+     panel is open. */
+  position: relative;
+  z-index: 40;
+  transition: flex-basis 220ms ease;
+}
+
+.media-panel-inner,
+.inspector-panel-inner {
+  position: relative;
+  height: 100%;
+}
+
+/* A panel is laid out from its track's *left* edge whatever the track's
+   width, which the two sides meet very differently.
+
+   The Inspector's track is the last item in the row, so its left edge
+   travels right as it closes and takes the panel with it: the panel slides
+   off the right of the window on its own, with nothing to add here. Its
+   tab, hanging off the panel's left edge, ends up exactly on the window's
+   own right edge — which is the whole point of it.
+
+   The Media panel's track is the first item, so its left edge never moves:
+   left alone, the panel would just sit there over the Composer while
+   closed. Pushing it a full width left is what takes it off-screen — and
+   lands its own tab, which hangs off its right edge, on the window's left
+   edge. */
+.media-panel-inner {
+  transform: translateX(-100%);
+  transition: transform 220ms ease;
+}
+
+.media-panel[data-opened] .media-panel-inner {
+  transform: translateX(0);
+}
+
+/* Each panel's own handle, and the only part of it in view while it's
+   closed: it hangs off the panel's inner edge, so with the panel pushed a
+   full width off-screen the tab lands exactly on the window's own edge —
+   and rides back out with it on the way open, ending up against the
+   Composer. Rounded on the side it faces the content from, square on the
+   side it's attached by. */
+.media-tab,
+.inspector-tab {
+  position: absolute;
+  top: 40px;
+  z-index: 30;
+  padding: 12px 6px;
+  /* The same ground a `SegmentedControl` gives its unselected side (see
+     Mantine's own `SegmentedControl.css`, which paints its root with this
+     in the dark scheme) — stated as that variable rather than as the hex
+     it currently resolves to, so the two stay in step. */
+  background-color: var(--mantine-color-dark-8);
+  color: white;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  /* Reads top to bottom down the tab — the label is set sideways rather
+     than one letter per line. */
+  writing-mode: vertical-rl;
+}
+
+.media-tab {
+  left: 100%;
+  border-radius: 0 5px 5px 0;
+}
+
+.inspector-tab {
+  right: 100%;
+  border-radius: 5px 0 0 5px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .media-panel,
+  .media-panel-inner,
+  .inspector-panel {
+    transition: none;
+  }
+}
+
+/* The Media panel's drop frame. The dashed rectangle sits 10px inside the
+   panel, and its own 1px border plus 4px of padding put whatever it holds
+   — the message, the squares — on the 15px gutter every other row of the
+   panel starts at (10 + 1 + 4). That also leaves a square exactly the
+   panel's width less those two gutters. The border is declared transparent
+   and only coloured while a file is over it, so nothing shifts by a pixel
+   when it appears.
+
+   Two of them, wearing the same frame: the empty state below, and each
+   tab's own panel once the library has something to show. */
+.media-dropzone {
+  box-sizing: border-box;
+  margin: 0 10px 10px;
+  padding: 4px;
+  border: 1px dashed transparent;
+  border-radius: 5px;
+}
+
+/* The empty state takes everything from under the category picker down to
+   the bottom of the window (hence the `content` height the panel gives its
+   ScrollArea) and centres its icon and message in that. */
+.media-dropzone[data-empty] {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.media-dropzone[data-dragging] {
+  border-color: var(--kbrd-border-color);
+}
+
+/* One media's own square in the Media panel (see `MediaTile`). Its width
+   is whatever the drop frame around its list leaves it — the panel's 15px
+   gutter either side — and `aspect-ratio` turns that into the square's
+   height, so the panel can change width without this needing to know. The
+   5px of padding is what the image is drawn inside. */
+.media-tile {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 5px;
+  background-color: var(--kbrd-color-body);
+  border: 1px solid var(--kbrd-border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Bounded on both axes rather than sized: whichever of the two the image
+   runs out of first is the one that decides, so it fills as much of the
+   square as its own ratio allows and no more. */
+.media-tile-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  opacity: 0;
+  transition: opacity 300ms ease;
+}
+
+.media-tile-image[data-loaded] {
+  opacity: 1;
+}
+
+/* Along the bottom of the square, inside its own padding — the bar with
+   its percentage just above it. */
+.media-tile-progress {
+  position: absolute;
+  left: 5px;
+  right: 5px;
+  bottom: 5px;
+}
+
+/* The Media panel's own right rule, separating it from the Composer —
+   drawn exactly like the Inspector's own (see above), just on the other
+   edge, so its 1px scrollbar (which stays on that same side) lands on the
+   same pixel column and covers it while scrolling. */
+.media-scroll::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 0 auto;
+  width: 1px;
+  background-color: var(--kbrd-border-color);
+  pointer-events: none;
   z-index: 1;
 }
 

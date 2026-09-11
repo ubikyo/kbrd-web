@@ -21,7 +21,7 @@ import {
   type DeviceStatus,
 } from "../../api/device";
 import type { LayoutSettings } from "../../types/layout";
-import type { StartupMode } from "../../utils/preferences";
+import type { PanelState, StartupMode } from "../../utils/preferences";
 
 const DEVICE_POLL_INTERVAL_MS = 5000;
 const MM_PER_INCH = 25.4;
@@ -48,6 +48,36 @@ function FieldRow({ label, children }: FieldRowProps) {
   );
 }
 
+/** One side panel's own "starts open or closed" row — the Media and
+ * Inspector panels take the same control (see `PanelState`). */
+function PanelRow({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: PanelState;
+  onChange: (state: PanelState) => void;
+}) {
+  return (
+    <FieldRow label={label}>
+      <Select
+        w="100%"
+        aria-label={label}
+        allowDeselect={false}
+        data={[
+          { value: "open", label: "Open" },
+          { value: "close", label: "Close" },
+        ]}
+        value={value}
+        onChange={(next) => {
+          if (next === "open" || next === "close") onChange(next);
+        }}
+      />
+    </FieldRow>
+  );
+}
+
 function DisplayRow({ label, value }: { label: string; value: string }) {
   return (
     <FieldRow label={label}>
@@ -69,11 +99,16 @@ type Props = {
   // the `debug` body class).
   debug: boolean;
   onDebugChange: (debug: boolean) => void;
-  // The Preferences tab's "On open, open" — app-level too (see `debug`),
-  // but persisted on its own (see `utils/preferences`) since it has to
-  // survive a reload to mean anything at all.
+  // The "On open" tab — app-level too (see `debug`), but persisted on
+  // its own (see `utils/preferences`) since these only mean anything
+  // across a reload. Each says what the app starts as, not what it is
+  // now: opening a panel from its own tab doesn't come through here.
   startupMode: StartupMode;
   onStartupModeChange: (mode: StartupMode) => void;
+  mediaPanel: PanelState;
+  onMediaPanelChange: (state: PanelState) => void;
+  inspectorPanel: PanelState;
+  onInspectorPanelChange: (state: PanelState) => void;
 };
 
 export default function Settings({
@@ -85,12 +120,19 @@ export default function Settings({
   onDebugChange,
   startupMode,
   onStartupModeChange,
+  mediaPanel,
+  onMediaPanelChange,
+  inspectorPanel,
+  onInspectorPanelChange,
 }: Props) {
   const [tab, setTab] = useState<string | null>("preferences");
   const [draft, setDraft] = useState<LayoutSettings>(settings);
   const [debugDraft, setDebugDraft] = useState(debug);
   const [startupModeDraft, setStartupModeDraft] =
     useState<StartupMode>(startupMode);
+  const [mediaPanelDraft, setMediaPanelDraft] = useState<PanelState>(mediaPanel);
+  const [inspectorPanelDraft, setInspectorPanelDraft] =
+    useState<PanelState>(inspectorPanel);
   const [device, setDevice] = useState<DeviceStatus>({ connected: false });
 
   // Reset the draft to the last saved values whenever the modal opens back up.
@@ -102,6 +144,8 @@ export default function Settings({
       setDraft(settings);
       setDebugDraft(debug);
       setStartupModeDraft(startupMode);
+      setMediaPanelDraft(mediaPanel);
+      setInspectorPanelDraft(inspectorPanel);
     }
   }
 
@@ -132,6 +176,8 @@ export default function Settings({
     setDraft(settings);
     setDebugDraft(debug);
     setStartupModeDraft(startupMode);
+    setMediaPanelDraft(mediaPanel);
+    setInspectorPanelDraft(inspectorPanel);
     onClose();
   }
 
@@ -139,6 +185,8 @@ export default function Settings({
     onSave(draft);
     onDebugChange(debugDraft);
     onStartupModeChange(startupModeDraft);
+    onMediaPanelChange(mediaPanelDraft);
+    onInspectorPanelChange(inspectorPanelDraft);
     onClose();
   }
 
@@ -218,11 +266,11 @@ export default function Settings({
             style={{ overflowY: "auto", padding: 0, paddingLeft: 40 }}
           >
             <Stack gap="md">
-              <Title order={4}>Preferences</Title>
-              <FieldRow label="On open, open">
+              <Title order={4}>On open</Title>
+              <FieldRow label="Set mode to">
                 <Select
                   w="100%"
-                  aria-label="On open, open"
+                  aria-label="Set mode to"
                   allowDeselect={false}
                   data={[
                     { value: "layout", label: "Layout" },
@@ -235,6 +283,16 @@ export default function Settings({
                   }}
                 />
               </FieldRow>
+              <PanelRow
+                label="Panel media"
+                value={mediaPanelDraft}
+                onChange={setMediaPanelDraft}
+              />
+              <PanelRow
+                label="Panel inspector"
+                value={inspectorPanelDraft}
+                onChange={setInspectorPanelDraft}
+              />
             </Stack>
           </Tabs.Panel>
 

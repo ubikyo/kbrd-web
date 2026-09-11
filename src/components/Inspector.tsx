@@ -40,6 +40,11 @@ import type { KeyPlugin, KeyProperty, LayerData } from "../types/layer";
 // grow its rows, so it states the same height by hand. `ROW_RULE` is the
 // 1px each row is closed with: Mantine draws it on the accordion item,
 // *outside* the heading, while a Plugins row draws it on itself.
+/** The panel's own fixed width — stated here and read by `App`, which
+ * opens its track to exactly that much and keeps the panel itself that
+ * wide throughout, so it slides instead of stretching. */
+export const INSPECTOR_PANEL_WIDTH = 280;
+
 const GROUP_LABEL_SPACE = 45;
 // The air above the first group of either tab, on top of the room its own
 // label already carries — the list starts a little clear of the tab strip
@@ -71,6 +76,11 @@ function GroupLabel({ children }: { children: ReactNode }) {
 }
 
 type Props = {
+  // Whether the panel is deployed. It renders its own tab either way —
+  // that's what opens and closes it, and while closed it's the only part
+  // of this in view (see `.inspector-tab` in App.css).
+  opened: boolean;
+  onToggle: () => void;
   layer: LayerData | null;
   selectedKey: string | null;
   tab: string | null;
@@ -109,8 +119,15 @@ type Props = {
  * Mapping-mode's Plugins/Properties tabs for `selectedKey` — see
  * `useKeyInspector` for everything behind the latter (which plugins/
  * properties a key has, and every mutation on them).
+ *
+ * Renders its own "Inspector" tab as well as the panel: the tab hangs off
+ * the panel's left edge, so while the panel is pushed off-screen the tab
+ * is all that shows, sitting on the window's right edge — that's what
+ * opens it. Same arrangement as the Media panel, mirrored.
  */
 export default function Inspector({
+  opened,
+  onToggle,
   layer,
   selectedKey,
   tab,
@@ -441,286 +458,306 @@ export default function Inspector({
     allPropertyValues.every((value) => openProperties.includes(value));
 
   return (
-    <ScrollArea
-      className="inspector-scroll"
-      h="100%"
-      bg="var(--kbrd-color-body)"
-      p={0}
-      type="scroll"
-      scrollbarSize={1}
-      // The scrollbar sits on the panel's own left edge, over the rule
-      // that separates the Inspector from the Composer — see
-      // `.inspector-scroll` in `App.css`, which draws that rule.
-      verticalScrollbarPosition="left"
-      // Mantine insets the thumb by a fifth of the scrollbar's size; at
-      // 1px that would leave it sub-pixel, so the track keeps none.
-      styles={{ scrollbar: { padding: 0, zIndex: 2 } }}
-    >
-      {/* The room above the tabs is the panel's, not its container's, so
-          the scrollbar runs the full height of the Inspector rather than
-          starting at the tabs. It scrolls away with the content. */}
-      <Tabs
-        pt={40}
-        className="inspector-tabs"
-        value={tab}
-        onChange={onTabChange}
-        variant="outline"
+    <>
+      <UnstyledButton
+        className="inspector-tab"
+        aria-expanded={opened}
+        aria-label={opened ? "Close inspector" : "Open inspector"}
+        onClick={onToggle}
       >
-        <Tabs.List grow>
-          <Tabs.Tab value="plugins">Plugins</Tabs.Tab>
-          <Tabs.Tab value="properties">Properties</Tabs.Tab>
-        </Tabs.List>
+        Inspector
+      </UnstyledButton>
 
-        <Tabs.Panel value="plugins" pb="lg">
-          {!layer ? (
-            <Text c="dimmed">
-              {hasLayout
-                ? "Create a layer to add plugins."
-                : "Create a layout to add plugins."}
-            </Text>
-          ) : (
-            // One labelled group per category, no accordion: with two of
-            // them (Display and Invoke in Mapping mode, Layout alone in
-            // Layout mode) there is nothing to fold away, and a list you
-            // drag *from* is worth having permanently in view.
-            // `pluginCategories` is derived from the plugins themselves,
-            // so a category shown here always has at least one row.
-            <Stack gap={0} pt={LIST_TOP_SPACE}>
-              {pluginCategories.map((category) => {
-                const categoryPlugins = draggablePlugins.filter(
-                  (plugin) => plugin.category === category,
-                );
-                return (
-                  <Box key={category}>
-                    <GroupLabel>{category}</GroupLabel>
-                    {/* Closed at the top, each row closed at the bottom —
-                        the same rules the Properties tab's own lists are
-                        drawn with. */}
-                    <Box
-                      style={{
-                        borderTop: "1px solid var(--kbrd-border-color)",
-                      }}
-                    >
-                      {categoryPlugins.map((plugin) => (
-                        <Box
-                          key={plugin.id}
-                          // The Properties heading's own height plus the
-                          // rule below it, which that list draws on its
-                          // accordion item rather than on the heading —
-                          // here the row carries both (Mantine boxes are
-                          // `border-box`). Same 10px padding as well.
-                          h={ROW_HEIGHT + ROW_RULE}
-                          p={10}
-                          draggable
-                          style={{
-                            borderBottom: "1px solid var(--kbrd-border-color)",
-                            // Without this, starting the drag with a
-                            // left click paints a native text/element
-                            // selection highlight over the row instead
-                            // of (or alongside) the custom drag ghost.
-                            userSelect: "none",
-                            WebkitUserSelect: "none",
-                            WebkitUserDrag: "element",
-                          }}
-                          onDragStart={(event) => {
-                            // "move" (not "copy") so the browser's own
-                            // cursor badge doesn't show a "+" — dropping
-                            // a plugin here doesn't remove it from this
-                            // list either way, "move" is just the cursor
-                            // this app wants.
-                            event.dataTransfer.effectAllowed = "move";
-                            event.dataTransfer.setData(
-                              "application/kbrd-plugin",
-                              plugin.id,
-                            );
-                            setPluginDragImage(event, plugin.name);
-                          }}
-                        >
-                          {/* 10px between the grip and the name, as in
-                              the Properties tab's own rows. */}
-                          <Group
-                            gap={10}
-                            wrap="nowrap"
-                            // Centred in whatever the fixed row leaves,
-                            // rather than sitting on its top padding.
-                            align="center"
-                            h="100%"
-                          >
-                            <MdDragIndicator
-                              aria-label="Move plugin"
-                              style={{ cursor: "grab", flexShrink: 0 }}
-                            />
-                            {/* White, not the palette's own body grey:
-                                this is the list you drag from, and the
-                                name is its content rather than its
-                                chrome. */}
-                            <Text c="#ffffff">{plugin.name}</Text>
-                          </Group>
-                        </Box>
-                      ))}
-                    </Box>
-                  </Box>
-                );
-              })}
-            </Stack>
-          )}
-        </Tabs.Panel>
+      {/* Closed, the panel is still mounted (it has to be, to slide) but
+          off-screen — `inert` keeps it out of the tab order and off the
+          accessibility tree while it is. The tab above isn't inside it,
+          so it stays reachable. */}
+      <ScrollArea
+        className="inspector-scroll"
+        inert={!opened}
+        h="100%"
+        bg="var(--kbrd-color-body)"
+        p={0}
+        type="scroll"
+        scrollbarSize={1}
+        // The scrollbar sits on the panel's own left edge, over the rule
+        // that separates the Inspector from the Composer — see
+        // `.inspector-scroll` in `App.css`, which draws that rule.
+        verticalScrollbarPosition="left"
+        // Mantine insets the thumb by a fifth of the scrollbar's size; at
+        // 1px that would leave it sub-pixel, so the track keeps none.
+        styles={{ scrollbar: { padding: 0, zIndex: 2 } }}
+      >
+        {/* The room above the tabs is the panel's, not its container's, so
+            the scrollbar runs the full height of the Inspector rather than
+            starting at the tabs. It scrolls away with the content. */}
+        <Tabs
+          pt={40}
+          className="panel-tabs"
+          value={tab}
+          onChange={onTabChange}
+          variant="outline"
+        >
+          <Tabs.List grow>
+            <Tabs.Tab value="plugins">Plugins</Tabs.Tab>
+            <Tabs.Tab value="properties">Properties</Tabs.Tab>
+          </Tabs.List>
 
-        <Tabs.Panel value="properties" pb="lg">
-          {mode === "layout" ? (
-            !layoutSelection ? (
-              <Text c="dimmed" p="40px">No item selected</Text>
+          <Tabs.Panel value="plugins" pb="lg">
+            {!layer ? (
+              <Text c="dimmed">
+                {hasLayout
+                  ? "Create a layer to add plugins."
+                  : "Create a layout to add plugins."}
+              </Text>
             ) : (
-              <LayoutCellProperties
-                cell={layoutSelection.cell}
-                onChange={(patch) =>
-                  onLayoutCellChange(layoutSelection.index, patch)
-                }
-              />
-            )
-          ) : !selectedKey ? (
-            <Text c="dimmed" p="40px">No item selected</Text>
-          ) : (
-            <Stack
-              key={selectedKey}
-              gap={0}
-              pt={LIST_TOP_SPACE}
-              style={{ position: "relative" }}
-            >
-              {/* Neither control takes a row of its own — the Plugins tab
-                  has no such pair, and the first label of either list has
-                  to sit at the same height — so they're positioned out of
-                  the flow, in the room the first group label's own top
-                  padding leaves above it. They sit on the list's own
-                  `LIST_TOP_SPACE`, well clear of that label: both apply
-                  to the whole key rather than to the group below them. */}
-              <Group
-                justify="space-between"
-                px={15}
-                style={{
-                  position: "absolute",
-                  top: LIST_TOP_SPACE,
-                  left: 0,
-                  right: 0,
-                }}
-              >
-                {/* Facing the state picker across that same row: opens
-                    every row of every group at once, and closes them all
-                    again once they are open. */}
-                <UnstyledButton
-                  className="inspector-expand-toggle"
-                  aria-label={
-                    allPropertiesOpen
-                      ? "Collapse all properties"
-                      : "Expand all properties"
+              // One labelled group per category, no accordion: with two of
+              // them (Display and Invoke in Mapping mode, Layout alone in
+              // Layout mode) there is nothing to fold away, and a list you
+              // drag *from* is worth having permanently in view.
+              // `pluginCategories` is derived from the plugins themselves,
+              // so a category shown here always has at least one row.
+              <Stack gap={0} pt={LIST_TOP_SPACE}>
+                {pluginCategories.map((category) => {
+                  const categoryPlugins = draggablePlugins.filter(
+                    (plugin) => plugin.category === category,
+                  );
+                  return (
+                    <Box key={category}>
+                      <GroupLabel>{category}</GroupLabel>
+                      {/* Closed at the top, each row closed at the bottom —
+                          the same rules the Properties tab's own lists are
+                          drawn with. */}
+                      <Box
+                        style={{
+                          borderTop: "1px solid var(--kbrd-border-color)",
+                        }}
+                      >
+                        {categoryPlugins.map((plugin) => (
+                          <Box
+                            key={plugin.id}
+                            // The Properties heading's own height plus the
+                            // rule below it, which that list draws on its
+                            // accordion item rather than on the heading —
+                            // here the row carries both (Mantine boxes are
+                            // `border-box`). Same 10px padding as well.
+                            h={ROW_HEIGHT + ROW_RULE}
+                            p={10}
+                            draggable
+                            style={{
+                              borderBottom: "1px solid var(--kbrd-border-color)",
+                              // Without this, starting the drag with a
+                              // left click paints a native text/element
+                              // selection highlight over the row instead
+                              // of (or alongside) the custom drag ghost.
+                              userSelect: "none",
+                              WebkitUserSelect: "none",
+                              WebkitUserDrag: "element",
+                            }}
+                            onDragStart={(event) => {
+                              // "move" (not "copy") so the browser's own
+                              // cursor badge doesn't show a "+" — dropping
+                              // a plugin here doesn't remove it from this
+                              // list either way, "move" is just the cursor
+                              // this app wants.
+                              event.dataTransfer.effectAllowed = "move";
+                              event.dataTransfer.setData(
+                                "application/kbrd-plugin",
+                                plugin.id,
+                              );
+                              setPluginDragImage(event, plugin.name);
+                            }}
+                          >
+                            {/* 10px between the grip and the name, as in
+                                the Properties tab's own rows. */}
+                            <Group
+                              gap={10}
+                              wrap="nowrap"
+                              // Centred in whatever the fixed row leaves,
+                              // rather than sitting on its top padding.
+                              align="center"
+                              h="100%"
+                            >
+                              <MdDragIndicator
+                                aria-label="Move plugin"
+                                style={{ cursor: "grab", flexShrink: 0 }}
+                              />
+                              {/* White, not the palette's own body grey:
+                                  this is the list you drag from, and the
+                                  name is its content rather than its
+                                  chrome. */}
+                              <Text c="#ffffff">{plugin.name}</Text>
+                            </Group>
+                          </Box>
+                        ))}
+                      </Box>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            )}
+          </Tabs.Panel>
+
+          <Tabs.Panel value="properties" pb="lg">
+            {mode === "layout" ? (
+              !layoutSelection ? (
+                <Text size="sm" c="dimmed" px={15} pt={25}>
+                  No item selected
+                </Text>
+              ) : (
+                <LayoutCellProperties
+                  cell={layoutSelection.cell}
+                  onChange={(patch) =>
+                    onLayoutCellChange(layoutSelection.index, patch)
                   }
-                  onClick={() =>
-                    setOpenProperties(
-                      allPropertiesOpen ? [] : allPropertyValues,
-                    )
-                  }
-                  style={{ display: "flex", alignItems: "center" }}
-                >
-                  {allPropertiesOpen ? (
-                    <MdUnfoldLess size={16} />
-                  ) : (
-                    <MdUnfoldMore size={16} />
-                  )}
-                </UnstyledButton>
-                <State
-                  states={propertyConfig.states}
-                  activeState={activeState}
-                  onSelect={setActiveState}
-                  onAdd={() => setStateEditorMode("add")}
-                  onEdit={() => setStateEditorMode("edit")}
-                  onDelete={() => deleteState(activeState)}
                 />
-              </Group>
-              {propertyGroups.map((group) => {
-                const values = groupValues(group);
-                const { category, items } = group;
-                return (
-                  // `property-group` so `App.css` can tell the last group
-                  // from the rest — see its own rule on the room an opened
-                  // row leaves below itself.
-                  <Box key={category} className="property-group">
-                    <GroupLabel>{category}</GroupLabel>
-                    {/* One accordion per group rather than one for the
-                        whole list: what's open in a group is its own
-                        business, and the rule each list closes itself with
-                        at the top is drawn on its own first item (see
-                        `.property-accordion` in `App.css`). Each reports
-                        only its own rows, so the tab-wide list keeps every
-                        other group's rows as they were. */}
-                    <Accordion
-                      multiple
-                      className="property-accordion"
-                      value={openProperties.filter((value) =>
-                        values.includes(value),
-                      )}
-                      onChange={(next) =>
-                        setOpenProperties((current) => [
-                          ...current.filter(
-                            (value) => !values.includes(value),
-                          ),
-                          ...next,
-                        ])
-                      }
-                    >
-                      {items.map(renderInstance)}
-                      {category === systemCategory && systemItem}
-                    </Accordion>
-                  </Box>
-                );
-              })}
-            </Stack>
-          )}
-        </Tabs.Panel>
-      </Tabs>
+              )
+            ) : !selectedKey ? (
+              <Text size="sm" c="dimmed" px={15} pt={25}>
+                No item selected
+              </Text>
+            ) : (
+              <Stack
+                key={selectedKey}
+                gap={0}
+                pt={LIST_TOP_SPACE}
+                style={{ position: "relative" }}
+              >
+                {/* Neither control takes a row of its own — the Plugins tab
+                    has no such pair, and the first label of either list has
+                    to sit at the same height — so they're positioned out of
+                    the flow, in the room the first group label's own top
+                    padding leaves above it. They sit on the list's own
+                    `LIST_TOP_SPACE`, well clear of that label: both apply
+                    to the whole key rather than to the group below them. */}
+                <Group
+                  justify="space-between"
+                  px={15}
+                  style={{
+                    position: "absolute",
+                    top: LIST_TOP_SPACE,
+                    left: 0,
+                    right: 0,
+                  }}
+                >
+                  {/* Facing the state picker across that same row: opens
+                      every row of every group at once, and closes them all
+                      again once they are open. */}
+                  <UnstyledButton
+                    className="inspector-expand-toggle"
+                    aria-label={
+                      allPropertiesOpen
+                        ? "Collapse all properties"
+                        : "Expand all properties"
+                    }
+                    onClick={() =>
+                      setOpenProperties(
+                        allPropertiesOpen ? [] : allPropertyValues,
+                      )
+                    }
+                    style={{ display: "flex", alignItems: "center" }}
+                  >
+                    {allPropertiesOpen ? (
+                      <MdUnfoldLess size={16} />
+                    ) : (
+                      <MdUnfoldMore size={16} />
+                    )}
+                  </UnstyledButton>
+                  <State
+                    states={propertyConfig.states}
+                    activeState={activeState}
+                    onSelect={setActiveState}
+                    onAdd={() => setStateEditorMode("add")}
+                    onEdit={() => setStateEditorMode("edit")}
+                    onDelete={() => deleteState(activeState)}
+                  />
+                </Group>
+                {propertyGroups.map((group) => {
+                  const values = groupValues(group);
+                  const { category, items } = group;
+                  return (
+                    // `property-group` so `App.css` can tell the last group
+                    // from the rest — see its own rule on the room an opened
+                    // row leaves below itself.
+                    <Box key={category} className="property-group">
+                      <GroupLabel>{category}</GroupLabel>
+                      {/* One accordion per group rather than one for the
+                          whole list: what's open in a group is its own
+                          business, and the rule each list closes itself with
+                          at the top is drawn on its own first item (see
+                          `.property-accordion` in `App.css`). Each reports
+                          only its own rows, so the tab-wide list keeps every
+                          other group's rows as they were. */}
+                      <Accordion
+                        multiple
+                        className="property-accordion"
+                        value={openProperties.filter((value) =>
+                          values.includes(value),
+                        )}
+                        onChange={(next) =>
+                          setOpenProperties((current) => [
+                            ...current.filter(
+                              (value) => !values.includes(value),
+                            ),
+                            ...next,
+                          ])
+                        }
+                      >
+                        {items.map(renderInstance)}
+                        {category === systemCategory && systemItem}
+                      </Accordion>
+                    </Box>
+                  );
+                })}
+              </Stack>
+            )}
+          </Tabs.Panel>
+        </Tabs>
 
-      <Modal
-        opened={deleting !== null}
-        onClose={() => setDeleting(null)}
-        title={<Text fw={700}>Delete plugin</Text>}
-        centered
-        size="sm"
-      >
-        <Stack>
-          <Text>
-            Permanently delete{" "}
-            <Text component="span" fw={600}>
-              {deleting ? pluginById(deleting.plugin_id)?.name : "this plugin"}
+        <Modal
+          opened={deleting !== null}
+          onClose={() => setDeleting(null)}
+          title={<Text fw={700}>Delete plugin</Text>}
+          centered
+          size="sm"
+        >
+          <Stack>
+            <Text>
+              Permanently delete{" "}
+              <Text component="span" fw={600}>
+                {deleting ? pluginById(deleting.plugin_id)?.name : "this plugin"}
+              </Text>
+              ?
             </Text>
-            ?
-          </Text>
-          <Group justify="flex-end">
-            <Button color="gray" onClick={() => setDeleting(null)}>
-              Cancel
-            </Button>
-            <Button
-              color="red"
-              leftSection={<MdDelete size={16} />}
-              onClick={() => deleting && void remove(deleting)}
-            >
-              Delete
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
+            <Group justify="flex-end">
+              <Button color="gray" onClick={() => setDeleting(null)}>
+                Cancel
+              </Button>
+              <Button
+                color="red"
+                leftSection={<MdDelete size={16} />}
+                onClick={() => deleting && void remove(deleting)}
+              >
+                Delete
+              </Button>
+            </Group>
+          </Stack>
+        </Modal>
 
-      {stateEditorMode && (
-        <StateEditor
-          mode={stateEditorMode}
-          states={propertyConfig.states}
-          editingState={stateEditorMode === "edit" ? activeState : undefined}
-          onClose={() => setStateEditorMode(null)}
-          onSubmit={(name, copyFrom) => {
-            if (stateEditorMode === "add") addState(name, copyFrom);
-            else renameState(activeState, name, copyFrom);
-            setStateEditorMode(null);
-          }}
-        />
-      )}
-    </ScrollArea>
+        {stateEditorMode && (
+          <StateEditor
+            mode={stateEditorMode}
+            states={propertyConfig.states}
+            editingState={stateEditorMode === "edit" ? activeState : undefined}
+            onClose={() => setStateEditorMode(null)}
+            onSubmit={(name, copyFrom) => {
+              if (stateEditorMode === "add") addState(name, copyFrom);
+              else renameState(activeState, name, copyFrom);
+              setStateEditorMode(null);
+            }}
+          />
+        )}
+      </ScrollArea>
+    </>
   );
 }

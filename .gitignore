@@ -22,3 +22,10 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# The local counterpart of the device's own /data/media: whatever has been
+# uploaded there, which is never this repo's business. The folder itself
+# stays, so the layout survives a fresh clone (see the Makefile, which only
+# ever creates it on the device).
+data/media/*
+!data/media/.gitkeep

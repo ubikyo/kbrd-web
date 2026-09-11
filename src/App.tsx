@@ -1,5 +1,4 @@
 import {
-  ActionIcon,
   AppShell,
   Box,
   Button,
@@ -9,18 +8,17 @@ import {
   Text,
 } from "@mantine/core";
 
-import { MdDelete, MdSettings } from "react-icons/md";
+import { MdDelete } from "react-icons/md";
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import kbrdLogo from "./assets/media/KBRD.svg";
-
-import Layout from "./components/menu/Layout";
 import LayoutEditor from "./components/modals/LayoutEditor";
 import type { FactoryLayout, LayoutData } from "./types/layout";
 
 import Composer from "./components/Composer";
-import Inspector from "./components/Inspector";
+import Header from "./components/Header";
+import Inspector, { INSPECTOR_PANEL_WIDTH } from "./components/Inspector";
+import Media, { MEDIA_PANEL_WIDTH } from "./components/Media";
 import Settings from "./components/modals/Settings";
 import LayerEditor from "./components/modals/LayerEditor";
 import ReplaceEntity from "./components/modals/ReplaceEntity";
@@ -32,8 +30,13 @@ import { useDisplayGrid } from "./classes/useDisplayGrid";
 import { useDisplaySettings } from "./classes/useDisplaySettings";
 import { useEntityEditors } from "./classes/useEntityEditors";
 import {
+  loadInspectorPanel,
+  loadMediaPanel,
   loadStartupMode,
+  saveInspectorPanel,
+  saveMediaPanel,
   saveStartupMode,
+  type PanelState,
   type StartupMode,
 } from "./utils/preferences";
 
@@ -63,6 +66,19 @@ export default function App() {
   const [layer, setLayer] = useState<LayerData | null>(null);
 
   const [settingsOpened, setSettingsOpened] = useState(false);
+  // The two side panels, each toggled from its own tab — the one thing of
+  // either that stays in view while it's closed (see `Media`/`Inspector`).
+  // Closed, a panel takes no room at all: the Composer (`flex: 1`) gets
+  // its width back. Both start wherever Settings' "On open" tab says; that
+  // preference is only ever read here, toggling a panel doesn't rewrite
+  // it.
+  const [mediaPanel, setMediaPanel] = useState<PanelState>(loadMediaPanel);
+  const [inspectorPanel, setInspectorPanel] =
+    useState<PanelState>(loadInspectorPanel);
+  const [mediaOpened, setMediaOpened] = useState(() => mediaPanel === "open");
+  const [inspectorOpened, setInspectorOpened] = useState(
+    () => inspectorPanel === "open",
+  );
 
   // Which form the Inspector's plugin editors show — see `mode` on
   // `Inspector`'s props and each plugin's `LayoutEditor`/`MappingEditor`.
@@ -249,55 +265,13 @@ export default function App() {
 
   return (
     <AppShell header={{ height: 64 }} padding={0}>
-      <AppShell.Header
-        bg="var(--kbrd-color-body)"
-        style={{
-          borderBottom: "1px solid var(--kbrd-border-color)",
-        }}
-      >
-        <Group h="100%" gap={0}>
-          <Box
-            w={86}
-            h="100%"
-            px="xs"
-            style={{
-              display: "flex",
-              alignItems: "center",
-              boxSizing: "border-box",
-            }}
-          >
-            <img
-              src={kbrdLogo}
-              alt="KBRD"
-              style={{
-                width: "100%",
-                maxWidth: "100%",
-                height: "auto",
-                display: "block",
-              }}
-            />
-          </Box>
-
-          <Layout
-            ref={entityEditors.layoutMenuRef}
-            onChange={changeLayout}
-            onAdd={entityEditors.openAddLayout}
-            onItemsChange={setLayoutItems}
-          />
-
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            size="lg"
-            ml="auto"
-            mr="md"
-            aria-label="Settings"
-            onClick={() => setSettingsOpened(true)}
-          >
-            <MdSettings size={20} />
-          </ActionIcon>
-        </Group>
-      </AppShell.Header>
+      <Header
+        layoutMenuRef={entityEditors.layoutMenuRef}
+        onLayoutChange={changeLayout}
+        onAddLayout={entityEditors.openAddLayout}
+        onLayoutItemsChange={setLayoutItems}
+        onOpenSettings={() => setSettingsOpened(true)}
+      />
 
       <Settings
         opened={settingsOpened}
@@ -311,6 +285,16 @@ export default function App() {
           setStartupMode(next);
           saveStartupMode(next);
         }}
+        mediaPanel={mediaPanel}
+        onMediaPanelChange={(next) => {
+          setMediaPanel(next);
+          saveMediaPanel(next);
+        }}
+        inspectorPanel={inspectorPanel}
+        onInspectorPanelChange={(next) => {
+          setInspectorPanel(next);
+          saveInspectorPanel(next);
+        }}
       />
 
       <AppShell.Main
@@ -319,8 +303,11 @@ export default function App() {
           height: "100vh",
         }}
       >
-        {/* Two fixed blocks: the Composer takes whatever's left, the
-            Inspector always 280px. */}
+        {/* A panel either side of the Composer, which takes whatever's
+            left: the Media panel (200px) on the far left, the Inspector
+            (280px) on the right. Each slides in from its own edge and
+            gives its room back when closed — see `.media-panel` /
+            `.inspector-panel` in App.css. */}
         <Box
           style={{
             position: "relative",
@@ -329,6 +316,27 @@ export default function App() {
             overflow: "hidden",
           }}
         >
+          {/* Always mounted — its track is what opens and closes (200px
+              to none), while the panel itself slides in from off-screen
+              left. Both run on the same transition, so the panel's right
+              edge never leaves the track's: the Composer takes up the
+              room at exactly the rate the panel leaves it. See
+              `.media-panel` in App.css. */}
+          <Box
+            className="media-panel"
+            data-opened={mediaOpened || undefined}
+            style={{ flexBasis: mediaOpened ? MEDIA_PANEL_WIDTH : 0 }}
+          >
+            <Box
+              className="media-panel-inner"
+              style={{ width: MEDIA_PANEL_WIDTH }}
+            >
+              <Media
+                opened={mediaOpened}
+                onToggle={() => setMediaOpened((opened) => !opened)}
+              />
+            </Box>
+          </Box>
           <Box style={{ flex: 1, minWidth: 0, height: "100%" }}>
             <Composer
               layoutSettings={layoutSettings}
@@ -353,34 +361,39 @@ export default function App() {
             />
           </Box>
           <Box
-            style={{
-              flex: "0 0 280px",
-              width: 280,
-              height: "100%",
-            }}
+            className="inspector-panel"
+            data-opened={inspectorOpened || undefined}
+            style={{ flexBasis: inspectorOpened ? INSPECTOR_PANEL_WIDTH : 0 }}
           >
-            <Inspector
-              layer={layer}
-              selectedKey={selectedKey}
-              selectedKeyTypeId={selectedKeyTypeId}
-              hasLayout={layout != null}
-              mode={mode}
-              layoutSelection={
-                grid.divisionSelection
-                  ? { index: grid.divisionSelection.subId, cell: grid.divisionSelection.cell }
-                  : grid.layoutSelection
-              }
-              onLayoutCellChange={
-                grid.divisionSelection
-                  ? (subId, patch) =>
-                      grid.changeDivisionCell(grid.divisionSelection!.parentId, subId, patch)
-                  : grid.changeCell
-              }
-              tab={inspectorTab}
-              onTabChange={setInspectorTab}
-              onChange={changePlugins}
-              onKeyPropertiesChange={changeKeyProperties}
-            />
+            <Box
+              className="inspector-panel-inner"
+              style={{ width: INSPECTOR_PANEL_WIDTH }}
+            >
+              <Inspector
+                opened={inspectorOpened}
+                onToggle={() => setInspectorOpened((value) => !value)}
+                layer={layer}
+                selectedKey={selectedKey}
+                selectedKeyTypeId={selectedKeyTypeId}
+                hasLayout={layout != null}
+                mode={mode}
+                layoutSelection={
+                  grid.divisionSelection
+                    ? { index: grid.divisionSelection.subId, cell: grid.divisionSelection.cell }
+                    : grid.layoutSelection
+                }
+                onLayoutCellChange={
+                  grid.divisionSelection
+                    ? (subId, patch) =>
+                        grid.changeDivisionCell(grid.divisionSelection!.parentId, subId, patch)
+                    : grid.changeCell
+                }
+                tab={inspectorTab}
+                onTabChange={setInspectorTab}
+                onChange={changePlugins}
+                onKeyPropertiesChange={changeKeyProperties}
+              />
+            </Box>
           </Box>
         </Box>
       </AppShell.Main>
