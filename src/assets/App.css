@@ -44,11 +44,16 @@ body.debug * {
 
 /* The heading owns the whole row's padding — its grip, control and
    buttons all sit flush inside it (see `.mantine-Accordion-control`
-   below), so the 10px is stated once here rather than per child. */
+   below), so the 10px is stated once here rather than per child. Both
+   figures are named because the two have to add up: an opened heading
+   pays for its underline out of the padding below it (see the rule
+   further down). */
 .inspector-accordion-heading {
+  --heading-padding: 10px;
+  --heading-underline: 2px;
   background: var(--kbrd-color-body);
   transition: background-color 120ms ease;
-  padding: 10px;
+  padding: var(--heading-padding);
 }
 
 .inspector-accordion-heading .mantine-Accordion-control {
@@ -57,10 +62,19 @@ body.debug * {
 
 /* An opened item's heading is underlined in the app's white line, not the
    grey the rows are separated by: it is what says "this is the one that's
-   open", and it has to read louder than the list around it. */
+   open", and it has to read louder than the list around it.
+
+   The row's height is a *border-box* one — `ROW_HEIGHT`, set on the Group
+   in `Inspector` — so the underline is taken out of the row rather than
+   added under it. Left at the full padding it would shrink the content
+   box by its own 2px and, the row being centred, lift everything in it by
+   half of that on the way open. So the padding below gives up exactly
+   what the border takes: the content box keeps the height it has closed,
+   the row keeps `ROW_HEIGHT`, and nothing moves. */
 .mantine-Accordion-item[data-active]
   > .inspector-accordion-heading {
-  border-bottom: 2px solid var(--kbrd-border-alt);
+  border-bottom: var(--heading-underline) solid var(--kbrd-border-alt);
+  padding-bottom: calc(var(--heading-padding) - var(--heading-underline));
 }
 
 .property-accordion > .mantine-Accordion-item[data-active] {
@@ -221,4 +235,40 @@ body.debug * {
    edge with no extra markup. */
 .picker-add-button:hover {
   background-color: var(--menu-item-hover, var(--mantine-color-dark-4));
+}
+
+/* The rule between the Composer and the Inspector is drawn inside the
+   Inspector's scroll root rather than as a border on its container, so
+   that the 1px scrollbar — moved to the left edge by
+   `verticalScrollbarPosition` — lands on the same pixel column and
+   covers it while scrolling instead of doubling it. */
+.inspector-scroll::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 1px;
+  background-color: var(--kbrd-border-color);
+  pointer-events: none;
+  /* Above everything the panel scrolls — a row's own background would
+     otherwise paint over it, the rule being a child of the scroll root
+     and so earlier in tree order than the content it has to show in
+     front of. The scrollbar itself is lifted one higher (see
+     `Inspector`), so it still covers the rule while scrolling. */
+  z-index: 1;
+}
+
+/* The Properties tab's expand/collapse control, facing the state picker
+   (see `Inspector`). Icon-only, so it takes the same hover as a property
+   row rather than a button's own chrome; the padding it hovers with is
+   given back as margin, leaving the icon on the 15px the group labels
+   below it start at. */
+.inspector-expand-toggle {
+  margin: -3px;
+  padding: 3px;
+  border-radius: 2px;
+  transition: background-color 120ms ease;
+}
+
+.inspector-expand-toggle:hover {
+  background: #171717;
 }

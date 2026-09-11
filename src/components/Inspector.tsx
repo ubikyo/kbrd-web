@@ -6,11 +6,18 @@ import {
   Button,
   Group,
   Modal,
+  ScrollArea,
   Stack,
   Tabs,
   Text,
+  UnstyledButton,
 } from "@mantine/core";
-import { MdDelete, MdDragIndicator } from "react-icons/md";
+import {
+  MdDelete,
+  MdDragIndicator,
+  MdUnfoldLess,
+  MdUnfoldMore,
+} from "react-icons/md";
 
 import { pluginSummary, setDragSymbol, setPluginDragImage } from "../classes/inspectorHelpers";
 import { useKeyInspector } from "../classes/useKeyInspector";
@@ -34,10 +41,11 @@ import type { KeyPlugin, KeyProperty, LayerData } from "../types/layer";
 // 1px each row is closed with: Mantine draws it on the accordion item,
 // *outside* the heading, while a Plugins row draws it on itself.
 const GROUP_LABEL_SPACE = 45;
-// How far above the first group's label row the state picker sits — it
-// belongs to the key, not to the group it would otherwise share a line
-// with. Absolutely positioned, so this moves the picker alone.
-const STATE_PICKER_LIFT = 20;
+// The air above the first group of either tab, on top of the room its own
+// label already carries — the list starts a little clear of the tab strip
+// rather than hard against it. Stated once for both tabs, which have to
+// start at the same height.
+const LIST_TOP_SPACE = 15;
 const ROW_HEIGHT = 48;
 const ROW_RULE = 1;
 
@@ -158,6 +166,11 @@ export default function Inspector({
   const [stateEditorMode, setStateEditorMode] = useState<"add" | "edit" | null>(
     null,
   );
+  // Which Properties rows are open, as the Accordion item values they are
+  // keyed by (a plugin instance's own id, or "system"). Held here rather
+  // than left to each group's own Accordion, so the expand/collapse
+  // button facing the state picker can work the whole tab at once.
+  const [openProperties, setOpenProperties] = useState<string[]>([]);
 
   // One plugin instance's own row in the Properties list — its own
   // function so each category group below can render its own list of
@@ -406,14 +419,48 @@ export default function Inspector({
       );
   })();
 
+  // The Accordion item values one group owns: a row per plugin instance,
+  // plus the system row in whichever group it's pinned to. Each group
+  // keeps its own Accordion (see below), so `openProperties` is split
+  // back out per group with this, and put back together the same way.
+  const groupValues = ({
+    category,
+    items,
+  }: {
+    category: string;
+    items: KeyPlugin[];
+  }) => [
+    ...items.map((item) => String(item.id)),
+    ...(category === systemCategory ? ["system"] : []),
+  ];
+  const allPropertyValues = propertyGroups.flatMap(groupValues);
+  // "All open" is what turns the expand button into a collapse one. An
+  // empty list can't be expanded, so it never counts as open.
+  const allPropertiesOpen =
+    allPropertyValues.length > 0 &&
+    allPropertyValues.every((value) => openProperties.includes(value));
+
   return (
-    <Box
+    <ScrollArea
+      className="inspector-scroll"
       h="100%"
       bg="var(--kbrd-color-body)"
       p={0}
-      style={{ overflow: "auto" }}
+      type="scroll"
+      scrollbarSize={1}
+      // The scrollbar sits on the panel's own left edge, over the rule
+      // that separates the Inspector from the Composer — see
+      // `.inspector-scroll` in `App.css`, which draws that rule.
+      verticalScrollbarPosition="left"
+      // Mantine insets the thumb by a fifth of the scrollbar's size; at
+      // 1px that would leave it sub-pixel, so the track keeps none.
+      styles={{ scrollbar: { padding: 0, zIndex: 2 } }}
     >
+      {/* The room above the tabs is the panel's, not its container's, so
+          the scrollbar runs the full height of the Inspector rather than
+          starting at the tabs. It scrolls away with the content. */}
       <Tabs
+        pt={40}
         className="inspector-tabs"
         value={tab}
         onChange={onTabChange}
@@ -438,7 +485,7 @@ export default function Inspector({
             // drag *from* is worth having permanently in view.
             // `pluginCategories` is derived from the plugins themselves,
             // so a category shown here always has at least one row.
-            <Stack gap={0}>
+            <Stack gap={0} pt={LIST_TOP_SPACE}>
               {pluginCategories.map((category) => {
                 const categoryPlugins = draggablePlugins.filter(
                   (plugin) => plugin.category === category,
@@ -534,24 +581,52 @@ export default function Inspector({
           ) : !selectedKey ? (
             <Text c="dimmed" p="40px">No item selected</Text>
           ) : (
-            <Stack key={selectedKey} gap={0} style={{ position: "relative" }}>
-              {/* The state picker takes no row of its own — the Plugins
-                  tab has no such control, and the first label of either
-                  list has to sit at the same height — so it's positioned
-                  out of the flow, in the room the panel's own top padding
-                  leaves above the first group label. `STATE_PICKER_LIFT`
-                  is how far above that label it sits: the picker applies
-                  to the whole key rather than to the group below it, and
-                  reads as its own control once clear of the label row. */}
+            <Stack
+              key={selectedKey}
+              gap={0}
+              pt={LIST_TOP_SPACE}
+              style={{ position: "relative" }}
+            >
+              {/* Neither control takes a row of its own — the Plugins tab
+                  has no such pair, and the first label of either list has
+                  to sit at the same height — so they're positioned out of
+                  the flow, in the room the first group label's own top
+                  padding leaves above it. They sit on the list's own
+                  `LIST_TOP_SPACE`, well clear of that label: both apply
+                  to the whole key rather than to the group below them. */}
               <Group
-                justify="flex-end"
-                pr={15}
+                justify="space-between"
+                px={15}
                 style={{
                   position: "absolute",
-                  top: GROUP_LABEL_SPACE - STATE_PICKER_LIFT,
+                  top: LIST_TOP_SPACE,
+                  left: 0,
                   right: 0,
                 }}
               >
+                {/* Facing the state picker across that same row: opens
+                    every row of every group at once, and closes them all
+                    again once they are open. */}
+                <UnstyledButton
+                  className="inspector-expand-toggle"
+                  aria-label={
+                    allPropertiesOpen
+                      ? "Collapse all properties"
+                      : "Expand all properties"
+                  }
+                  onClick={() =>
+                    setOpenProperties(
+                      allPropertiesOpen ? [] : allPropertyValues,
+                    )
+                  }
+                  style={{ display: "flex", alignItems: "center" }}
+                >
+                  {allPropertiesOpen ? (
+                    <MdUnfoldLess size={16} />
+                  ) : (
+                    <MdUnfoldMore size={16} />
+                  )}
+                </UnstyledButton>
                 <State
                   states={propertyConfig.states}
                   activeState={activeState}
@@ -561,23 +636,43 @@ export default function Inspector({
                   onDelete={() => deleteState(activeState)}
                 />
               </Group>
-              {propertyGroups.map(({ category, items }) => (
-                // `property-group` so `App.css` can tell the last group
-                // from the rest — see its own rule on the room an opened
-                // row leaves below itself.
-                <Box key={category} className="property-group">
-                  <GroupLabel>{category}</GroupLabel>
-                  {/* One accordion per group rather than one for the
-                      whole list: what's open in a group is its own
-                      business, and the rule each list closes itself with
-                      at the top is drawn on its own first item (see
-                      `.property-accordion` in `App.css`). */}
-                  <Accordion multiple className="property-accordion">
-                    {items.map(renderInstance)}
-                    {category === systemCategory && systemItem}
-                  </Accordion>
-                </Box>
-              ))}
+              {propertyGroups.map((group) => {
+                const values = groupValues(group);
+                const { category, items } = group;
+                return (
+                  // `property-group` so `App.css` can tell the last group
+                  // from the rest — see its own rule on the room an opened
+                  // row leaves below itself.
+                  <Box key={category} className="property-group">
+                    <GroupLabel>{category}</GroupLabel>
+                    {/* One accordion per group rather than one for the
+                        whole list: what's open in a group is its own
+                        business, and the rule each list closes itself with
+                        at the top is drawn on its own first item (see
+                        `.property-accordion` in `App.css`). Each reports
+                        only its own rows, so the tab-wide list keeps every
+                        other group's rows as they were. */}
+                    <Accordion
+                      multiple
+                      className="property-accordion"
+                      value={openProperties.filter((value) =>
+                        values.includes(value),
+                      )}
+                      onChange={(next) =>
+                        setOpenProperties((current) => [
+                          ...current.filter(
+                            (value) => !values.includes(value),
+                          ),
+                          ...next,
+                        ])
+                      }
+                    >
+                      {items.map(renderInstance)}
+                      {category === systemCategory && systemItem}
+                    </Accordion>
+                  </Box>
+                );
+              })}
             </Stack>
           )}
         </Tabs.Panel>
@@ -626,6 +721,6 @@ export default function Inspector({
           }}
         />
       )}
-    </Box>
+    </ScrollArea>
   );
 }

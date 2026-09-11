@@ -357,8 +357,6 @@ export default function App() {
               flex: "0 0 280px",
               width: 280,
               height: "100%",
-              padding: "40px 0 0 0",
-              borderLeft: "1px solid var(--kbrd-border-color)",
             }}
           >
             <Inspector
