@@ -7,10 +7,32 @@
  * Every one of these says what the app should look like when it opens,
  * not what it looks like now: opening or closing a panel from its own tab
  * doesn't write anything here.
+ *
+ * The one exception is the colour scheme (Settings' Appearance tab),
+ * which applies the moment it's picked rather than on the next open —
+ * and which Mantine stores itself. See `ColorSchemePreference` below.
  */
 
 /** Which mode `App` starts in — see its own `mode`. */
 export type StartupMode = "layout" | "mapping";
+
+/**
+ * Settings' Appearance tab — which of the two palettes in
+ * `@kbrd/plugins/theme` the app wears. Deliberately Mantine's own
+ * `MantineColorScheme` and nothing of ours: this is the one preference
+ * here that isn't stored by this module at all.
+ *
+ * `useMantineColorScheme` reads and writes it through the provider's own
+ * manager (`localStorage`, under `mantine-color-scheme-value`), which is
+ * also what the inline script in `index.html` reads to paint the first
+ * frame. A second copy kept here would be a second source of truth for
+ * the same thing — so the tab talks to Mantine directly (see
+ * `Settings`), and only the default below is stated on this side.
+ */
+export type ColorSchemePreference = "auto" | "light" | "dark";
+
+/** Follow the OS until told otherwise — see `main.tsx`'s provider. */
+export const DEFAULT_COLOR_SCHEME: ColorSchemePreference = "auto";
 
 /** Whether a side panel (Media, Inspector) starts deployed — see `App`'s
  * own `mediaOpened`/`inspectorOpened`, and each panel's own tab. */

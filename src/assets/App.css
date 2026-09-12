@@ -16,7 +16,7 @@ body,
 body {
   margin: 0;
   background-color: var(--kbrd-color-body);
-  color: var(--mantine-color-dark-0);
+  color: var(--kbrd-color-text);
   /* No text anywhere in the app is meant to be selected (labels,
      buttons, the Factory grid's own SVG text…) — a stray drag (over the
      board's cells especially, now that dragging one moves it) shouldn't
@@ -116,7 +116,7 @@ body.debug * {
 }
 
 .inspector-accordion-heading:hover {
-  background: #171717;
+  background: var(--kbrd-color-hover);
 }
 
 .inspector-accordion-heading .mantine-Accordion-control:hover {
@@ -135,7 +135,7 @@ body.debug * {
   position: relative;
   z-index: 1;
   border-bottom-color: var(--kbrd-color-body);
-  color: white;
+  color: var(--kbrd-color-contrast);
 }
 
 /* The tab strip runs edge to edge in the panel, so the active tab's outer
@@ -194,8 +194,8 @@ body.debug * {
 }
 
 .navbar {
-  background-color: var(--mantine-color-dark-7);
-  border-right: 1px solid var(--mantine-color-dark-5);
+  background-color: var(--kbrd-color-raised);
+  border-right: 1px solid var(--kbrd-border-color);
   padding: var(--mantine-spacing-md);
 }
 
@@ -214,15 +214,15 @@ body.debug * {
   align-items: center;
   justify-content: center;
 
-  color: var(--mantine-color-dark-1);
+  color: var(--kbrd-color-text);
   transition:
     background-color 120ms ease,
     color 120ms ease;
 }
 
 .navbar-link:hover {
-  background-color: var(--mantine-color-dark-5);
-  color: var(--mantine-color-white);
+  background-color: var(--kbrd-color-active);
+  color: var(--kbrd-color-contrast);
 }
 
 .navbar-link[data-active] {
@@ -235,7 +235,7 @@ body.debug * {
    full width/height, so a plain background-color hover fills it edge to
    edge with no extra markup. */
 .picker-add-button:hover {
-  background-color: var(--menu-item-hover, var(--mantine-color-dark-4));
+  background-color: var(--menu-item-hover, var(--kbrd-color-active));
 }
 
 /* The rule between the Composer and the Inspector is drawn inside the
@@ -334,12 +334,11 @@ body.debug * {
   top: 40px;
   z-index: 30;
   padding: 12px 6px;
-  /* The same ground a `SegmentedControl` gives its unselected side (see
-     Mantine's own `SegmentedControl.css`, which paints its root with this
-     in the dark scheme) — stated as that variable rather than as the hex
-     it currently resolves to, so the two stay in step. */
-  background-color: var(--mantine-color-dark-8);
-  color: white;
+  /* Set back from the app's own ground rather than raised off it — the
+     tab is the panel's furniture, and reads as the edge the panel slides
+     out of. */
+  background-color: var(--kbrd-color-raised);
+  color: var(--kbrd-color-contrast);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.08em;
@@ -367,18 +366,18 @@ body.debug * {
 .media-columns-toggle {
   padding: 3px;
   border-radius: 2px;
-  color: var(--mantine-color-dark-2);
+  color: var(--mantine-color-dimmed);
   transition:
     background-color 120ms ease,
     color 120ms ease;
 }
 
 .media-columns-toggle:hover {
-  background: #171717;
+  background: var(--kbrd-color-hover);
 }
 
 .media-columns-toggle[data-active] {
-  color: var(--mantine-color-white);
+  color: var(--kbrd-color-contrast);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -496,7 +495,7 @@ body.debug * {
    this. */
 .media-tile[data-dragging] {
   border-style: dashed;
-  background-color: var(--mantine-color-dark-6);
+  background-color: var(--kbrd-color-active);
 }
 
 /* The button that deletes a media, in the lower right of its square and
@@ -568,7 +567,7 @@ body.debug * {
 
 .media-add:hover,
 .media-add[data-dragging] {
-  background-color: var(--mantine-color-dark-6);
+  background-color: var(--kbrd-color-active);
 }
 
 /* Along the bottom of the square, inset from its edges — the bar with
@@ -607,5 +606,49 @@ body.debug * {
 }
 
 .inspector-expand-toggle:hover {
-  background: #171717;
+  background: var(--kbrd-color-hover);
+}
+
+/* The display's casing (see `Display`'s own `BEZEL_MM`): the band of
+   material around the panel, standing in for the part KBRD-DEV's screen
+   is actually mounted in. It's a box around the SVG rather than anything
+   drawn inside it — see the comment where it's mounted for why the SVG
+   has to stay the active area and nothing else — so the band itself is
+   this element's own padding, given in pixels by `Display` (a real
+   millimetre count, scaled with the panel, rather than a fixed pixel one).
+
+   Deliberately flat: the casing is two values — this band against the
+   app's own ground, which is both what's behind it and what fills the
+   glass inside it — and one hairline edge, and that's the whole of it.
+   No gradient down the band, no shadow under the part, no highlight
+   along the top: at this size those read as decoration rather than as a
+   physical object, and the app draws everything else (cells, rules,
+   panels) in the same flat register. The rounded outer corners are the
+   one concession to the physical, and even those are a radius in
+   millimetres rather than a styling flourish — a moulded part has a
+   corner radius; a rectangle of pixels doesn't.
+
+   `--kbrd-display-case` is the one colour in the palette that belongs to
+   nothing else — it has to stand off `--kbrd-color-body` from both
+   sides, in both themes. See its own docblock in `themes/palette.ts`. */
+.factory-display-case {
+  box-sizing: content-box;
+  flex-shrink: 0;
+  background-color: var(--kbrd-display-case);
+  border-style: solid;
+  border-color: var(--kbrd-border-color);
+  /* The SVG is an inline element: without this its baseline gap would
+     deepen the bottom of the band by a few pixels and put the panel off
+     its own casing's centre. (`Display` also sets `display: block` on the
+     SVG itself; this covers the line box either way.) */
+  line-height: 0;
+  cursor: pointer;
+}
+
+/* The display selected as its own target — the whole physical object, so
+   it's the casing's edge that answers rather than an outline around the
+   glass. Same green every other "this is the one" in the app is drawn in
+   (`--kbrd-color-selected`, see `LayoutCell`). */
+.factory-display-case[data-selected] {
+  border-color: var(--kbrd-color-selected);
 }

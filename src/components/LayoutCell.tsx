@@ -17,7 +17,11 @@ const LABEL_FONT_SIZE_MM = 2.5;
 // Vertical spacing between the label's own lines (size, Layout plugin
 // type, each attached Mapping plugin type) — see `labelLines` below.
 const LABEL_LINE_HEIGHT_MM = LABEL_FONT_SIZE_MM * 1.2;
-const SELECTED_STROKE = "#00ff00";
+// The same "this is the one" the rest of the app is drawn in. A `stroke`
+// presentation attribute does take a `var()` — the labels below have read
+// their fill that way all along — so there's no literal to keep in step
+// with the palette here.
+const SELECTED_STROKE = "var(--kbrd-color-selected)";
 // Both kinds of drag destination — a plugin dragged from the Inspector
 // (`isDropTarget`) and a key's Mapping content dragged from another key
 // (`isMoveTarget`, see `useKeyDrag`) — read the same way: the cell/
@@ -48,11 +52,10 @@ const GRIP_DOT_PATHS = [
   "M14 12a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
   "M14 19a1 1 0 1 0 2 0a1 1 0 1 0 -2 0",
 ];
-// `@kbrd/plugins/theme` hardcodes the Splitter thumb's own background to
-// white, overriding the app's otherwise-dark palette — the border and dot
-// color are left at Mantine's own dark-scheme defaults (see
-// `Splitter.css`'s `[data-mantine-color-scheme='dark']` rules).
-const GRIP_BACKGROUND = "#FFFFFF";
+// The palette's loudest foreground, which is what `@kbrd/plugins/theme`
+// also paints a Splitter thumb with — the grip is the same object. White
+// on the dark theme's black glass, black on the light theme's white one.
+const GRIP_BACKGROUND = "var(--kbrd-color-contrast)";
 
 type Props = {
   // Bounding box, used as the shape when `path` isn't given (a plain,
@@ -361,7 +364,7 @@ export function ResizeGrip({ bounds, pxPerMm, onResizeStart }: ResizeGripProps) 
         height={gripHeight}
         rx={gripWidth / 2}
         fill={GRIP_BACKGROUND}
-        stroke="var(--mantine-color-dark-4)"
+        stroke="var(--kbrd-border-color)"
         strokeWidth={1}
         vectorEffect="non-scaling-stroke"
       />

@@ -40,8 +40,29 @@ import LayoutCell, { ResizeGrip } from "./LayoutCell";
 
 const PADDING = 80;
 const PLUGIN_DRAG_TYPE = "application/kbrd-plugin";
-// Same green `LayoutCell` uses for a selected cell.
-const DISPLAY_SELECTED_STROKE = "#00ff00";
+// The casing around the panel (see `.factory-display-case`), in the
+// display's own mm — the band of material between the active area and the
+// outside world, plus the radius its outer corners are machined to. The
+// active area is all anything actually reports (EDID gives its size and
+// nothing else), so unlike every other millimetre here these two are a
+// convention rather than a measurement: they exist to make the rectangle
+// read as a physical panel, and are expressed in mm only so the casing
+// scales with the display instead of staying a fixed number of pixels
+// while the panel grows.
+const BEZEL_MM = 1.25;
+const BEZEL_RADIUS_MM = 0.75;
+// Floor on the casing's real thickness, for the one case where the two
+// above can't be converted to pixels at all: the physical width isn't
+// known yet (`pxPerMm` is 0, see below), which would leave the band a
+// zero-width nothing — and with the casing gone, so is the only thing
+// telling the panel's black apart from the body's. It overshoots the size
+// the panel was fit to by these few pixels on each side, which the
+// surface's own `PADDING` absorbs.
+const MIN_BEZEL_PX = 3;
+// `.factory-display-case`'s own 1px edge, on each side, kept out of the
+// size the panel is fit to below so the casing lands inside the viewport
+// exactly rather than one pixel over on each axis.
+const CASE_EDGE_PX = 1;
 
 // What's currently under the drag cursor: an existing cell, a row's
 // trailing empty space (see `remainingUnitsInRow`) — there's no "default
@@ -139,9 +160,10 @@ type Props = LayoutSettings & {
   // `onFocusCell` for one division of a divided cell.
   onFocusDivision: (ref: DivisionRef) => void;
   onToggleDivision: (ref: DivisionRef) => void;
-  // The physical screen itself (the white outline) selected as its own
-  // target — mutually exclusive with a cell — for `App`'s Layout/Layer
-  // context menu, the same way selecting a cell shows its own.
+  // The physical screen itself (glass and casing alike, the casing's own
+  // edge being what goes green — see `.factory-display-case`) selected as
+  // its own target — mutually exclusive with a cell — for `App`'s
+  // Layout/Layer context menu, the same way selecting a cell shows its own.
   isDisplaySelected: boolean;
   onSelectDisplay: () => void;
   // Right-click, anywhere on the display — reports the client-space
@@ -168,11 +190,15 @@ type Props = LayoutSettings & {
  * The physical screen itself — a rectangle standing in for KBRD-DEV's
  * physical screen, sized to that screen's aspect ratio (fetched from
  * KBRD-API, which KBRD-DEV keeps up to date) and fit to the available
- * surface — plus its whole cell grid, drawn as part of the same SVG
- * rather than a separate bordered box around it, so both share one
- * coordinate system and stay centered together. SVG (rather than a CSS
- * grid) is what lets a merged group's shape become a stepped outline (an
- * ISO Enter key) instead of a plain rectangle. Purely a controlled
+ * surface — plus its whole cell grid, drawn as part of that same SVG
+ * rather than in a box of its own, so both share one coordinate system
+ * and stay centered together. SVG (rather than a CSS grid) is what lets a
+ * merged group's shape become a stepped outline (an ISO Enter key)
+ * instead of a plain rectangle. The one thing deliberately kept *out* of
+ * that SVG is the casing around the panel (see `BEZEL_MM` and
+ * `.factory-display-case`): the SVG's own top-left corner is what every
+ * drag converts pointer positions against, so it has to go on staying the
+ * active area's own corner and nothing else. Purely a controlled
  * renderer: every mode-level chrome around it (the Layout/Mapping switch,
  * Resize, the context menu, Divide) lives in `<Composer>`, one level up.
  *
@@ -250,16 +276,29 @@ export default function Display({
     ? device.width / device.height
     : FALLBACK_WIDTH / FALLBACK_HEIGHT;
 
+  // The active area alone — what the SVG below covers, and what every
+  // millimetre in it is measured against. What's fit to the viewport is
+  // the whole panel, casing included (`BEZEL_MM` on each side, scaled
+  // along with everything else), so the band of material can't push the
+  // display off its own surface at small sizes: solving that for the
+  // active area's width is what the `bezel` term does here, being the
+  // casing expressed as a fraction of that width. Zero when the physical
+  // width isn't known yet, which reduces the whole thing to the plain
+  // "fit this aspect ratio" it was before a casing existed.
   const display = (() => {
     if (viewport.width <= 0 || viewport.height <= 0) return null;
 
-    let width = viewport.width;
-    let height = width / ratio;
-    if (height > viewport.height) {
-      height = viewport.height;
-      width = height * ratio;
-    }
-    return { width, height };
+    const bezel = physicalWidthMm > 0 ? (2 * BEZEL_MM) / physicalWidthMm : 0;
+    const availableWidth = viewport.width - 2 * CASE_EDGE_PX;
+    const availableHeight = viewport.height - 2 * CASE_EDGE_PX;
+    const width = Math.max(
+      0,
+      Math.min(
+        availableWidth / (1 + bezel),
+        availableHeight / (1 / ratio + bezel),
+      ),
+    );
+    return { width, height: width / ratio };
   })();
   // The SVG's own scale — real screen pixels per mm of `viewBox` — used to
   // convert a fixed-pixel size (the resize grip, see `LayoutCell`) into
@@ -268,6 +307,13 @@ export default function Display({
     if (!display || physicalWidthMm <= 0) return 0;
     return display.width / physicalWidthMm;
   })();
+  // The casing, in real pixels. Both axes take the *horizontal* scale, so
+  // the band is the same thickness all the way round the way a moulded
+  // part is — `display.height` follows the panel's pixel aspect ratio
+  // rather than its millimetre one (see `ratio`), so the vertical scale
+  // isn't necessarily this one.
+  const bezelPx = Math.max(BEZEL_MM * pxPerMm, MIN_BEZEL_PX);
+  const bezelRadiusPx = BEZEL_RADIUS_MM * pxPerMm;
 
   // `App` already clamped any Max height (1U) override into `rows`' own
   // length before it ever reaches here — see `gridItemsY`.
@@ -805,7 +851,11 @@ export default function Display({
     onContextMenu(event.clientX, event.clientY, { kind: "row", row });
   }
 
-  function handleDisplayContextMenu(event: ReactMouseEvent<SVGSVGElement>) {
+  // Bound on the panel (the SVG) and on its casing alike — see the two
+  // elements below — hence the pair of element types.
+  function handleDisplayContextMenu(
+    event: ReactMouseEvent<SVGSVGElement | HTMLDivElement>,
+  ) {
     event.preventDefault();
     onSelectDisplay();
     onContextMenu(event.clientX, event.clientY, { kind: "display" });
@@ -830,270 +880,309 @@ export default function Display({
       }}
     >
       {display && (
-        <svg
-          ref={svgRef}
-          className="factory-display"
-          aria-label="Display"
-          width={display.width}
-          height={display.height}
-          viewBox={`0 0 ${physicalWidthMm} ${physicalHeightMm}`}
-          // Any click that isn't on a cell — including the frame itself —
-          // bubbles up here and selects the display instead; cells stop
-          // their own click from reaching this (see `handleClick`). Also
-          // the final backstop for `suppressClickRef`/`keyDrag`'s own —
-          // the state update a drag's `pointerup` triggers (a fresh
-          // selection, a moved plugin…) can get the dragged cell/division
-          // reconciled to a new DOM node before the browser's trailing
-          // `click` fires, letting it bubble straight past every `<g>`'s
-          // own `stopPropagation()` up to here instead.
-          onClick={() => {
-            if (suppressClickRef.current || keyDrag.suppressClickRef.current) {
-              suppressClickRef.current = false;
-              keyDrag.suppressClickRef.current = false;
-              return;
-            }
+        // The casing (see `BEZEL_MM`), drawn as a box *around* the SVG
+        // rather than inside it. Every pointer-to-millimetre conversion in
+        // `useCellMove`/`useKeyDrag` reads the SVG's own client rect and
+        // treats its top-left corner as the `viewBox`'s own origin, so
+        // widening the `viewBox` to make room for a band of material would
+        // have put that origin somewhere in the middle of the casing and
+        // thrown off every drag by exactly `BEZEL_MM`. Kept outside, the
+        // SVG stays the active area and nothing but it, and the casing is
+        // pure chrome: two flat values (`--kbrd-display-case` against
+        // `--kbrd-color-body`) and one hairline edge, no gradient or
+        // shadow faking a third dimension.
+        <div
+          className="factory-display-case"
+          data-selected={isDisplaySelected || undefined}
+          style={{
+            padding: bezelPx,
+            borderRadius: bezelRadiusPx,
+            borderWidth: CASE_EDGE_PX,
+          }}
+          // The casing is part of the display, so clicking or
+          // right-clicking the band selects it the same way the panel
+          // itself does — but only when the band is what was actually hit:
+          // the SVG's own handlers below bubble up here, and re-running
+          // them would undo the `suppressClickRef` dance they do.
+          onClick={(event) => {
+            if (event.target !== event.currentTarget) return;
             onSelectDisplay();
           }}
-          onContextMenu={handleDisplayContextMenu}
-          style={{ flexShrink: 0, cursor: "pointer" }}
+          onContextMenu={(event) => {
+            if (event.target !== event.currentTarget) return;
+            handleDisplayContextMenu(event);
+          }}
         >
-          <rect
-            x={0}
-            y={0}
-            width={physicalWidthMm}
-            height={physicalHeightMm}
-            fill="transparent"
-            stroke={isDisplaySelected ? DISPLAY_SELECTED_STROKE : "var(--kbrd-border-alt)"}
-            strokeWidth={isDisplaySelected ? 2 : 1}
-            vectorEffect="non-scaling-stroke"
-          />
-          {physicalWidthMm > 0 && itemsY > 0 && (
-            <g transform={`translate(${gridOffsetX}, ${gridOffsetY})`}>
-              {rows.map((cellIds, row) => {
-                const slots = layoutRow(cellIds, cells, unitMm, gapMm);
-                const cellItems = slots.map((slot) => {
-                  const group = groupOf(slot.id, mergeGroups);
-                  const primary = Math.min(...group);
-                  // A merged cell only renders once, from its primary —
-                  // its other members are covered by the merge's own shape.
-                  if (primary !== slot.id) return null;
+          <svg
+            ref={svgRef}
+            className="factory-display"
+            aria-label="Display"
+            width={display.width}
+            height={display.height}
+            viewBox={`0 0 ${physicalWidthMm} ${physicalHeightMm}`}
+            // Any click that isn't on a cell — bare glass, in other
+            // words — bubbles up here and selects the display instead; cells stop
+            // their own click from reaching this (see `handleClick`). Also
+            // the final backstop for `suppressClickRef`/`keyDrag`'s own —
+            // the state update a drag's `pointerup` triggers (a fresh
+            // selection, a moved plugin…) can get the dragged cell/division
+            // reconciled to a new DOM node before the browser's trailing
+            // `click` fires, letting it bubble straight past every `<g>`'s
+            // own `stopPropagation()` up to here instead.
+            onClick={() => {
+              if (suppressClickRef.current || keyDrag.suppressClickRef.current) {
+                suppressClickRef.current = false;
+                keyDrag.suppressClickRef.current = false;
+                return;
+              }
+              onSelectDisplay();
+            }}
+            onContextMenu={handleDisplayContextMenu}
+            style={{ display: "block", cursor: "pointer" }}
+          >
+            {/* The glass — the app's own ground, so the screen turns over
+                with the theme like every panel around it. Painted rather
+                than left transparent, the casing being what's behind it
+                now, and it needs no outline of its own: the step between
+                the casing and this is the panel's edge, and the casing's
+                own edge is what turns green while the display is the
+                selected target (see
+                `.factory-display-case[data-selected]`). */}
+            <rect
+              x={0}
+              y={0}
+              width={physicalWidthMm}
+              height={physicalHeightMm}
+              fill="var(--kbrd-color-body)"
+            />
+            {physicalWidthMm > 0 && itemsY > 0 && (
+              <g transform={`translate(${gridOffsetX}, ${gridOffsetY})`}>
+                {rows.map((cellIds, row) => {
+                  const slots = layoutRow(cellIds, cells, unitMm, gapMm);
+                  const cellItems = slots.map((slot) => {
+                    const group = groupOf(slot.id, mergeGroups);
+                    const primary = Math.min(...group);
+                    // A merged cell only renders once, from its primary —
+                    // its other members are covered by the merge's own shape.
+                    if (primary !== slot.id) return null;
 
-                  const cell = cells[primary];
-                  // A cell always gets a `typeId` the instant it's
-                  // created (dropping a Layout plugin is what creates it
-                  // in the first place) — except a cell that used to be
-                  // divided, all of whose divisions were merged back
-                  // into one that happened to still be blank (see
-                  // `App`'s `mergeDivisionWith`): render that one exactly
-                  // like the row's own trailing empty space, no text and
-                  // staying dashed even once selected, rather than
-                  // showing a stray size label on a cell with nothing
-                  // really assigned to it.
-                  const hasContent = Boolean(cell?.typeId);
-                  const merged =
-                    group.length > 1
-                      ? mergedOutline(group, rows, cells, unitMm, gapMm)
-                      : null;
-                  const bounds = merged?.bounds ?? {
-                    x: slot.x,
-                    y: row * rowPitch,
-                    width: slot.width,
-                    height: unitMm,
-                  };
+                    const cell = cells[primary];
+                    // A cell always gets a `typeId` the instant it's
+                    // created (dropping a Layout plugin is what creates it
+                    // in the first place) — except a cell that used to be
+                    // divided, all of whose divisions were merged back
+                    // into one that happened to still be blank (see
+                    // `App`'s `mergeDivisionWith`): render that one exactly
+                    // like the row's own trailing empty space, no text and
+                    // staying dashed even once selected, rather than
+                    // showing a stray size label on a cell with nothing
+                    // really assigned to it.
+                    const hasContent = Boolean(cell?.typeId);
+                    const merged =
+                      group.length > 1
+                        ? mergedOutline(group, rows, cells, unitMm, gapMm)
+                        : null;
+                    const bounds = merged?.bounds ?? {
+                      x: slot.x,
+                      y: row * rowPitch,
+                      width: slot.width,
+                      height: unitMm,
+                    };
 
-                  // Only a single, unmerged cell has one well-defined right
-                  // edge to drag — a merge's shape (and its Unit) comes
-                  // from all of its members together. Queued for its own
-                  // pass below rather than rendered here — see
-                  // `pendingGrips` — and skipped entirely while "Resize" is
-                  // off (Layout mode only: Mapping mode hides the switch
-                  // and never shows a grip regardless of what it was left
-                  // at), so there's nothing to show *or* drag.
-                  if (mode === "layout" && resizeEnabled && group.length === 1 && cell) {
-                    pendingGrips.push({ id: primary, bounds, unit: cell.unit });
-                  }
+                    // Only a single, unmerged cell has one well-defined right
+                    // edge to drag — a merge's shape (and its Unit) comes
+                    // from all of its members together. Queued for its own
+                    // pass below rather than rendered here — see
+                    // `pendingGrips` — and skipped entirely while "Resize" is
+                    // off (Layout mode only: Mapping mode hides the switch
+                    // and never shows a grip regardless of what it was left
+                    // at), so there's nothing to show *or* drag.
+                    if (mode === "layout" && resizeEnabled && group.length === 1 && cell) {
+                      pendingGrips.push({ id: primary, bounds, unit: cell.unit });
+                    }
 
-                  // A divided (and, by construction, still unmerged at
-                  // the top level — see `GridCell.divide`) cell renders
-                  // its own division grid instead of one plain shape; the
-                  // resize grip above still targets its own outer `unit`.
-                  if (group.length === 1 && cell?.divide) {
+                    // A divided (and, by construction, still unmerged at
+                    // the top level — see `GridCell.divide`) cell renders
+                    // its own division grid instead of one plain shape; the
+                    // resize grip above still targets its own outer `unit`.
+                    if (group.length === 1 && cell?.divide) {
+                      return (
+                        <LayoutCellDivision
+                          key={primary}
+                          mode={mode}
+                          parentId={primary}
+                          divide={cell.divide}
+                          parentRect={bounds}
+                          parentUnit={cell.unit}
+                          selectedCellIndices={selectedCellIndices}
+                          selectedDivisionIndices={selectedDivisionIndices}
+                          isDropTarget={(subId) =>
+                            dropTarget?.kind === "division" &&
+                            dropTarget.parentId === primary &&
+                            dropTarget.subId === subId
+                          }
+                          isMoveTarget={(subId) =>
+                            keyDrag.dragTarget?.kind === "division" &&
+                            keyDrag.dragTarget.parentId === primary &&
+                            keyDrag.dragTarget.subId === subId
+                          }
+                          onDivisionClick={handleDivisionClick}
+                          onDivisionContextMenu={handleDivisionContextMenu}
+                          onDivisionDragOver={handleDivisionDragOver}
+                          onDivisionDragLeave={(parentId, subId) =>
+                            handleDragLeave({ kind: "division", parentId, subId })
+                          }
+                          onDivisionDrop={handleDivisionDrop}
+                          onDivisionPointerDown={(parentId, subId, event) =>
+                            keyDrag.handleKeyPointerDown(
+                              { kind: "division", parentId, subId },
+                              event,
+                            )
+                          }
+                          keyPluginsFor={keyPluginsFor}
+                          keyLookFor={keyLookFor}
+                        />
+                      );
+                    }
+
+                    // Mapping mode only ever shows a cell whose own Layout
+                    // plugin opts into it (`mapping-visible` — Key does,
+                    // Space doesn't) — an invisible one still keeps its row
+                    // slot (nothing here changes `layoutRow`'s own math),
+                    // just nothing renders there: no shape, no text, and
+                    // (having no element at all) no longer clickable either.
+                    if (mode !== "layout" && !isMappingVisible(cell?.typeId)) {
+                      return null;
+                    }
+
                     return (
-                      <LayoutCellDivision
+                      <LayoutCell
                         key={primary}
-                        mode={mode}
-                        parentId={primary}
-                        divide={cell.divide}
-                        parentRect={bounds}
-                        parentUnit={cell.unit}
-                        selectedCellIndices={selectedCellIndices}
-                        selectedDivisionIndices={selectedDivisionIndices}
-                        isDropTarget={(subId) =>
-                          dropTarget?.kind === "division" &&
-                          dropTarget.parentId === primary &&
-                          dropTarget.subId === subId
+                        bounds={bounds}
+                        path={merged?.path}
+                        labelBounds={merged?.labelBounds}
+                        typeId={cell?.typeId}
+                        keyPlugins={keyPluginsFor(cell?.keyRef)}
+                        look={keyLookFor(cell?.keyRef)}
+                        unit={hasContent ? cell?.unit : undefined}
+                        isEmpty={!hasContent}
+                        isSelected={selectedCellIndices.includes(primary)}
+                        isDropTarget={
+                          dropTarget?.kind === "cell" && dropTarget.id === primary
                         }
-                        isMoveTarget={(subId) =>
-                          keyDrag.dragTarget?.kind === "division" &&
-                          keyDrag.dragTarget.parentId === primary &&
-                          keyDrag.dragTarget.subId === subId
+                        isMoveTarget={
+                          keyDrag.dragTarget?.kind === "cell" &&
+                          keyDrag.dragTarget.id === primary
                         }
-                        onDivisionClick={handleDivisionClick}
-                        onDivisionContextMenu={handleDivisionContextMenu}
-                        onDivisionDragOver={handleDivisionDragOver}
-                        onDivisionDragLeave={(parentId, subId) =>
-                          handleDragLeave({ kind: "division", parentId, subId })
+                        // Layout-only: Mapping mode shows the shape (once
+                        // `mapping-visible`) with no size/type caption under
+                        // it — see `LayoutCell`'s own `showText`.
+                        showText={mode === "layout"}
+                        onClick={(event) => handleClick(event, primary)}
+                        onContextMenu={(event) => handleCellContextMenu(primary, event)}
+                        onDragOver={(event) => handleCellDragOver(primary, event)}
+                        onDragLeave={() =>
+                          handleDragLeave({ kind: "cell", id: primary })
                         }
-                        onDivisionDrop={handleDivisionDrop}
-                        onDivisionPointerDown={(parentId, subId, event) =>
-                          keyDrag.handleKeyPointerDown(
-                            { kind: "division", parentId, subId },
-                            event,
-                          )
+                        onDrop={(event) => handleCellDrop(primary, event)}
+                        // Layout: only a single, unmerged cell has one
+                        // well-defined place to drag *from* — same
+                        // restriction the resize grip already has (see
+                        // `pendingGrips` above). Mapping: any Key cell that
+                        // actually has content — dragging it moves that
+                        // content onto whatever key it's dropped on (see
+                        // `useKeyDrag`), in place of the old "Move to" menu
+                        // item; an empty key has nothing to drag.
+                        onPointerDown={
+                          mode === "layout"
+                            ? group.length === 1
+                              ? (event) => handleCellPointerDown(primary, event)
+                              : undefined
+                            : (event) =>
+                                keyDrag.handleKeyPointerDown({ kind: "cell", id: primary }, event)
                         }
-                        keyPluginsFor={keyPluginsFor}
-                        keyLookFor={keyLookFor}
                       />
                     );
-                  }
+                  });
 
-                  // Mapping mode only ever shows a cell whose own Layout
-                  // plugin opts into it (`mapping-visible` — Key does,
-                  // Space doesn't) — an invisible one still keeps its row
-                  // slot (nothing here changes `layoutRow`'s own math),
-                  // just nothing renders there: no shape, no text, and
-                  // (having no element at all) no longer clickable either.
-                  if (mode !== "layout" && !isMappingVisible(cell?.typeId)) {
-                    return null;
-                  }
-
-                  return (
-                    <LayoutCell
-                      key={primary}
-                      bounds={bounds}
-                      path={merged?.path}
-                      labelBounds={merged?.labelBounds}
-                      typeId={cell?.typeId}
-                      keyPlugins={keyPluginsFor(cell?.keyRef)}
-                      look={keyLookFor(cell?.keyRef)}
-                      unit={hasContent ? cell?.unit : undefined}
-                      isEmpty={!hasContent}
-                      isSelected={selectedCellIndices.includes(primary)}
-                      isDropTarget={
-                        dropTarget?.kind === "cell" && dropTarget.id === primary
-                      }
-                      isMoveTarget={
-                        keyDrag.dragTarget?.kind === "cell" &&
-                        keyDrag.dragTarget.id === primary
-                      }
-                      // Layout-only: Mapping mode shows the shape (once
-                      // `mapping-visible`) with no size/type caption under
-                      // it — see `LayoutCell`'s own `showText`.
-                      showText={mode === "layout"}
-                      onClick={(event) => handleClick(event, primary)}
-                      onContextMenu={(event) => handleCellContextMenu(primary, event)}
-                      onDragOver={(event) => handleCellDragOver(primary, event)}
-                      onDragLeave={() =>
-                        handleDragLeave({ kind: "cell", id: primary })
-                      }
-                      onDrop={(event) => handleCellDrop(primary, event)}
-                      // Layout: only a single, unmerged cell has one
-                      // well-defined place to drag *from* — same
-                      // restriction the resize grip already has (see
-                      // `pendingGrips` above). Mapping: any Key cell that
-                      // actually has content — dragging it moves that
-                      // content onto whatever key it's dropped on (see
-                      // `useKeyDrag`), in place of the old "Move to" menu
-                      // item; an empty key has nothing to drag.
-                      onPointerDown={
-                        mode === "layout"
-                          ? group.length === 1
-                            ? (event) => handleCellPointerDown(primary, event)
-                            : undefined
-                          : (event) =>
-                              keyDrag.handleKeyPointerDown({ kind: "cell", id: primary }, event)
-                      }
-                    />
+                  const remaining = remainingUnitsInRow(
+                    row,
+                    rows,
+                    cells,
+                    physicalWidthMm,
+                    unitMm,
+                    gapMm,
                   );
-                });
+                  // A row's own trailing empty space (its dashed drop
+                  // target) is a Layout-only concept — there's nothing to
+                  // drop there in Mapping mode, and the row itself isn't a
+                  // selectable target either.
+                  if (mode !== "layout" || remaining <= 0) return cellItems;
 
-                const remaining = remainingUnitsInRow(
-                  row,
-                  rows,
-                  cells,
-                  physicalWidthMm,
-                  unitMm,
-                  gapMm,
-                );
-                // A row's own trailing empty space (its dashed drop
-                // target) is a Layout-only concept — there's nothing to
-                // drop there in Mapping mode, and the row itself isn't a
-                // selectable target either.
-                if (mode !== "layout" || remaining <= 0) return cellItems;
-
-                const last = slots[slots.length - 1];
-                // An empty row's drop zone picks up right where the last
-                // real cell left off — or at the row's own flush origin
-                // (see `layoutRow`) if there isn't one yet.
-                const emptyX = last ? last.x + last.width + gapMm : 0;
-                // Reaches all the way to the row's reference right edge
-                // (`referenceRowWidthMm`, the same footprint `gridOffsetX`
-                // centers), not just `remaining * unitMm` — a lone big
-                // cell's Unit budget doesn't spend the gaps a full row of
-                // 1U cells would have, so stopping at the raw Unit width
-                // alone would leave the drop zone short of the physical
-                // edge and the whole row looking off-center.
-                const emptyWidth = Math.max(referenceRowWidthMm - emptyX, 0);
-                return [
-                  ...cellItems,
-                  <LayoutCell
-                    key={`row-${row}-empty`}
-                    bounds={{
-                      x: emptyX,
-                      y: row * rowPitch,
-                      width: emptyWidth,
-                      height: unitMm,
-                    }}
-                    isEmpty
-                    isSelected={selectedEmptyRow === row}
-                    isDropTarget={
-                      dropTarget?.kind === "row" && dropTarget.row === row
+                  const last = slots[slots.length - 1];
+                  // An empty row's drop zone picks up right where the last
+                  // real cell left off — or at the row's own flush origin
+                  // (see `layoutRow`) if there isn't one yet.
+                  const emptyX = last ? last.x + last.width + gapMm : 0;
+                  // Reaches all the way to the row's reference right edge
+                  // (`referenceRowWidthMm`, the same footprint `gridOffsetX`
+                  // centers), not just `remaining * unitMm` — a lone big
+                  // cell's Unit budget doesn't spend the gaps a full row of
+                  // 1U cells would have, so stopping at the raw Unit width
+                  // alone would leave the drop zone short of the physical
+                  // edge and the whole row looking off-center.
+                  const emptyWidth = Math.max(referenceRowWidthMm - emptyX, 0);
+                  return [
+                    ...cellItems,
+                    <LayoutCell
+                      key={`row-${row}-empty`}
+                      bounds={{
+                        x: emptyX,
+                        y: row * rowPitch,
+                        width: emptyWidth,
+                        height: unitMm,
+                      }}
+                      isEmpty
+                      isSelected={selectedEmptyRow === row}
+                      isDropTarget={
+                        dropTarget?.kind === "row" && dropTarget.row === row
+                      }
+                      onClick={(event) => handleEmptyClick(row, event)}
+                      onContextMenu={(event) => handleEmptyContextMenu(row, event)}
+                      onDragOver={(event) => handleRowDragOver(row, event)}
+                      onDragLeave={() =>
+                        handleDragLeave({ kind: "row", row })
+                      }
+                      onDrop={(event) => handleRowDrop(row, event)}
+                    />,
+                  ];
+                })}
+                {pendingGrips.map((grip) => (
+                  <ResizeGrip
+                    key={grip.id}
+                    bounds={grip.bounds}
+                    pxPerMm={pxPerMm}
+                    onResizeStart={(event) =>
+                      handleResizeStart(grip.id, grip.unit, event)
                     }
-                    onClick={(event) => handleEmptyClick(row, event)}
-                    onContextMenu={(event) => handleEmptyContextMenu(row, event)}
-                    onDragOver={(event) => handleRowDragOver(row, event)}
-                    onDragLeave={() =>
-                      handleDragLeave({ kind: "row", row })
-                    }
-                    onDrop={(event) => handleRowDrop(row, event)}
-                  />,
-                ];
-              })}
-              {pendingGrips.map((grip) => (
-                <ResizeGrip
-                  key={grip.id}
-                  bounds={grip.bounds}
-                  pxPerMm={pxPerMm}
-                  onResizeStart={(event) =>
-                    handleResizeStart(grip.id, grip.unit, event)
-                  }
-                />
-              ))}
-              {moveDropTarget && (
-                <line
-                  x1={moveDropTarget.xMm}
-                  x2={moveDropTarget.xMm}
-                  y1={moveDropTarget.row * rowPitch}
-                  y2={moveDropTarget.row * rowPitch + unitMm}
-                  stroke="#00ff00"
-                  strokeWidth={2}
-                  vectorEffect="non-scaling-stroke"
-                  style={{ pointerEvents: "none" }}
-                />
-              )}
-            </g>
-          )}
-        </svg>
+                  />
+                ))}
+                {moveDropTarget && (
+                  <line
+                    x1={moveDropTarget.xMm}
+                    x2={moveDropTarget.xMm}
+                    y1={moveDropTarget.row * rowPitch}
+                    y2={moveDropTarget.row * rowPitch + unitMm}
+                    stroke="var(--kbrd-color-selected)"
+                    strokeWidth={2}
+                    vectorEffect="non-scaling-stroke"
+                    style={{ pointerEvents: "none" }}
+                  />
+                )}
+              </g>
+            )}
+          </svg>
+        </div>
       )}
     </Box>
   );

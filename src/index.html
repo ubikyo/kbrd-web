@@ -5,6 +5,30 @@
     <link rel="icon" type="image/svg+xml" href="./assets/media/K.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>kbrd-ui</title>
+    <!-- Mantine's own `ColorSchemeScript`, inlined: it has to run before
+         anything paints, and this app has no server to render that
+         component from. It stamps `data-mantine-color-scheme` onto
+         `<html>` from whatever Settings' Appearance tab last stored —
+         resolving "auto" against the OS — so the first frame is already
+         the right palette instead of flashing dark on the way to light.
+         Keep the storage key and the default in step with `main.tsx`. -->
+    <script>
+      try {
+        var stored = window.localStorage.getItem("mantine-color-scheme-value");
+        var scheme =
+          stored === "light" || stored === "dark" || stored === "auto"
+            ? stored
+            : "auto";
+        document.documentElement.setAttribute(
+          "data-mantine-color-scheme",
+          scheme !== "auto"
+            ? scheme
+            : window.matchMedia("(prefers-color-scheme: dark)").matches
+              ? "dark"
+              : "light",
+        );
+      } catch (e) {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

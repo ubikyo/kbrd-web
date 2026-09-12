@@ -555,7 +555,7 @@ export default function Composer({
           <HoverCard.Target>
             <UnstyledButton
               aria-label="Keyboard shortcuts"
-              style={{ display: "flex", color: "var(--mantine-color-white)" }}
+              style={{ display: "flex", color: "var(--kbrd-color-contrast)" }}
             >
               <MdHelp size={22} />
             </UnstyledButton>

@@ -582,11 +582,13 @@ export default function Inspector({
                                 aria-label="Move plugin"
                                 style={{ cursor: "grab", flexShrink: 0 }}
                               />
-                              {/* White, not the palette's own body grey:
-                                  this is the list you drag from, and the
-                                  name is its content rather than its
-                                  chrome. */}
-                              <Text c="#ffffff">{plugin.name}</Text>
+                              {/* The palette's loudest foreground, not
+                                  its body grey: this is the list you drag
+                                  from, and the name is its content rather
+                                  than its chrome. */}
+                              <Text c="var(--kbrd-color-contrast)">
+                                {plugin.name}
+                              </Text>
                             </Group>
                           </Box>
                         ))}

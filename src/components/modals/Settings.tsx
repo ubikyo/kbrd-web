@@ -11,8 +11,9 @@ import {
   Tabs,
   Text,
   Title,
+  useMantineColorScheme,
 } from "@mantine/core";
-import { MdCode, MdStraighten, MdTune } from "react-icons/md";
+import { MdCode, MdPalette, MdStraighten, MdTune } from "react-icons/md";
 
 import {
   FALLBACK_HEIGHT,
@@ -21,10 +22,26 @@ import {
   type DeviceStatus,
 } from "../../api/device";
 import type { LayoutSettings } from "../../types/layout";
-import type { PanelState, StartupMode } from "../../utils/preferences";
+import type {
+  ColorSchemePreference,
+  PanelState,
+  StartupMode,
+} from "../../utils/preferences";
 
 const DEVICE_POLL_INTERVAL_MS = 5000;
 const MM_PER_INCH = 25.4;
+
+/** The Appearance tab's own three answers. "System" is Mantine's own
+ * `auto` — the value follows the OS rather than naming a palette, which
+ * is why it can't just be a third theme. */
+const COLOR_SCHEMES: { value: ColorSchemePreference; label: string }[] = [
+  { value: "auto", label: "System" },
+  { value: "light", label: "Light" },
+  { value: "dark", label: "Dark" },
+];
+
+const isColorScheme = (value: string | null): value is ColorSchemePreference =>
+  COLOR_SCHEMES.some((option) => option.value === value);
 
 type FieldRowProps = {
   label: string;
@@ -135,6 +152,19 @@ export default function Settings({
     useState<PanelState>(inspectorPanel);
   const [device, setDevice] = useState<DeviceStatus>({ connected: false });
 
+  // The Appearance tab. Unlike every other control in this modal, the
+  // colour scheme is *not* drafted: a theme that only arrived on Save
+  // would be picked blind, so it's applied the moment it's chosen and
+  // the whole app repaints underneath the modal. Cancel still has to
+  // mean cancel, though — hence the value as it stood when the modal
+  // opened, which is what a cancel puts back.
+  //
+  // Mantine owns the value itself (and its persistence, see
+  // `ColorSchemePreference`); nothing is mirrored into local state here,
+  // so there is no second copy to keep in step.
+  const { colorScheme, setColorScheme } = useMantineColorScheme();
+  const [colorSchemeAtOpen, setColorSchemeAtOpen] = useState(colorScheme);
+
   // Reset the draft to the last saved values whenever the modal opens back up.
   const [wasOpened, setWasOpened] = useState(opened);
   if (opened !== wasOpened) {
@@ -146,6 +176,7 @@ export default function Settings({
       setStartupModeDraft(startupMode);
       setMediaPanelDraft(mediaPanel);
       setInspectorPanelDraft(inspectorPanel);
+      setColorSchemeAtOpen(colorScheme);
     }
   }
 
@@ -178,6 +209,9 @@ export default function Settings({
     setStartupModeDraft(startupMode);
     setMediaPanelDraft(mediaPanel);
     setInspectorPanelDraft(inspectorPanel);
+    // The one change already in force on screen — put the app back in
+    // whatever it was wearing when this modal opened.
+    setColorScheme(colorSchemeAtOpen);
     onClose();
   }
 
@@ -187,6 +221,9 @@ export default function Settings({
     onStartupModeChange(startupModeDraft);
     onMediaPanelChange(mediaPanelDraft);
     onInspectorPanelChange(inspectorPanelDraft);
+    // Nothing to apply for Appearance — it went in as it was picked, and
+    // Mantine has already stored it. Saving only makes that permanent by
+    // *not* undoing it the way `cancel` does.
     onClose();
   }
 
@@ -253,6 +290,9 @@ export default function Settings({
             <Tabs.Tab value="preferences" leftSection={<MdTune size={16} />}>
               Preferences
             </Tabs.Tab>
+            <Tabs.Tab value="appearance" leftSection={<MdPalette size={16} />}>
+              Appearance
+            </Tabs.Tab>
             <Tabs.Tab value="display" leftSection={<MdStraighten size={16} />}>
               Display
             </Tabs.Tab>
@@ -293,6 +333,34 @@ export default function Settings({
                 value={inspectorPanelDraft}
                 onChange={setInspectorPanelDraft}
               />
+            </Stack>
+          </Tabs.Panel>
+
+          <Tabs.Panel
+            value="appearance"
+            style={{ overflowY: "auto", padding: 0, paddingLeft: 40 }}
+          >
+            <Stack gap="md">
+              <Title order={4}>Theme</Title>
+              <FieldRow label="Color scheme">
+                <Select
+                  w="100%"
+                  aria-label="Color scheme"
+                  allowDeselect={false}
+                  data={COLOR_SCHEMES}
+                  value={colorScheme}
+                  onChange={(value) => {
+                    if (isColorScheme(value)) setColorScheme(value);
+                  }}
+                />
+              </FieldRow>
+              <Text size="xs" c="dimmed">
+                System follows this machine's own light/dark setting, and
+                changes with it. The whole app turns over, the display
+                preview included — note that the device itself always
+                draws on black, so a light theme shows your layout on a
+                ground the hardware doesn't have.
+              </Text>
             </Stack>
           </Tabs.Panel>
 
