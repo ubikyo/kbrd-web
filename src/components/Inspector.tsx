@@ -530,7 +530,7 @@ export default function Inspector({
                           drawn with. */}
                       <Box
                         style={{
-                          borderTop: "1px solid var(--kbrd-border-color)",
+                          borderTop: "1px solid var(--kbrd-rule-color)",
                         }}
                       >
                         {categoryPlugins.map((plugin) => (
@@ -545,7 +545,7 @@ export default function Inspector({
                             p={10}
                             draggable
                             style={{
-                              borderBottom: "1px solid var(--kbrd-border-color)",
+                              borderBottom: "1px solid var(--kbrd-rule-color)",
                               // Without this, starting the drag with a
                               // left click paints a native text/element
                               // selection highlight over the row instead

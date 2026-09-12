@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
 import {
+  ActionIcon,
   Box,
   Group,
   Progress,
@@ -9,18 +10,25 @@ import {
   Text,
   UnstyledButton,
 } from "@mantine/core";
-import { MdFileUpload } from "react-icons/md";
+import { MdAdd, MdDelete, MdFileUpload } from "react-icons/md";
+// The column switch alone comes from Tabler: its `columns-1`/`columns-2`
+// draw the layout they stand for — one pane, then two — where Material
+// has no matching pair (see `ColumnPicker`).
+import { TbColumns1, TbColumns2 } from "react-icons/tb";
 
 import {
   createMediaCategory,
+  deleteMedia,
   deleteMediaCategory,
   listMediaCategories,
   listMedias,
   mediaUrl,
+  replaceMedia,
   updateMediaCategory,
   uploadMedia,
 } from "../api/media";
 import {
+  ACCEPTED_MEDIA,
   MAX_MEDIA_BYTES,
   mediaKindOf,
   type MediaCategoryData,
@@ -28,14 +36,10 @@ import {
   type MediaKind,
 } from "../types/media";
 import { randomId } from "../utils/id";
+import type { MediaColumns } from "../utils/mediaPanel";
 import Category from "./menu/Category";
 import CategoryEditor from "./modals/CategoryEditor";
 import Confirmation from "./modals/Confirmation";
-
-/** The panel's own fixed width — stated here and read by `App`, which
- * opens its track to exactly that much and keeps the panel itself that
- * wide throughout, so it slides instead of stretching. */
-export const MEDIA_PANEL_WIDTH = 200;
 
 /**
  * One media the panel shows, from the moment it's dropped: `filename` is
@@ -67,6 +71,55 @@ function fromRecord(media: MediaData): LibraryMedia {
   };
 }
 
+/** What makes a drop target of whatever wears it — the panel's empty
+ * state, the square that adds medias, and each media's own square, which
+ * takes a dropped file as a replacement for what it holds. */
+type DropHandlers = {
+  "data-dragging": true | undefined;
+  onDragEnter: (event: DragEvent) => void;
+  onDragOver: (event: DragEvent) => void;
+  onDragLeave: (event: DragEvent) => void;
+  onDrop: (event: DragEvent) => void;
+};
+
+/**
+ * One drop target's own handlers, and the frame it wears while a file is
+ * over it.
+ *
+ * `dragenter`/`dragleave` fire again for every child the pointer crosses
+ * inside the target, so the two are counted against each other rather
+ * than read one at a time — otherwise the frame flickers off the moment
+ * the pointer reaches an icon or a label inside it. A drop stops where it
+ * lands: a square inside the panel takes it, rather than it also reaching
+ * whatever it sits in.
+ */
+function useDropTarget(onFiles: (files: File[]) => void): DropHandlers {
+  const [dragging, setDragging] = useState(false);
+  const depth = useRef(0);
+
+  return {
+    "data-dragging": dragging || undefined,
+    onDragEnter: (event) => {
+      event.preventDefault();
+      depth.current += 1;
+      setDragging(true);
+    },
+    onDragOver: (event) => event.preventDefault(),
+    onDragLeave: (event) => {
+      event.preventDefault();
+      depth.current -= 1;
+      if (depth.current <= 0) setDragging(false);
+    },
+    onDrop: (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      depth.current = 0;
+      setDragging(false);
+      onFiles(Array.from(event.dataTransfer.files));
+    },
+  };
+}
+
 /**
  * One media's own square in the panel: black, ruled, and as wide as the
  * panel leaves it — its list sets the 15px gutter either side, and the
@@ -76,66 +129,221 @@ function fromRecord(media: MediaData): LibraryMedia {
  * percentage sit along the bottom while the file is going out, and the
  * image fades in over them once it's there (`data-loaded`, set when the
  * browser has actually decoded it — not merely when the upload returned,
- * which would fade in on nothing). The image keeps its own ratio inside
- * the square's 5px of padding, never filling more of either axis than it
- * has.
+ * which would fade in on nothing). Which file was decoded is what's held
+ * rather than merely that one was, so a replacement fades in the same way
+ * instead of inheriting the last one's. The image keeps its own ratio
+ * inside the square's 5px of padding, never filling more of either axis
+ * than it has.
+ *
+ * The square is also what a media is changed from: a file dropped on it
+ * replaces what it holds, and the button in its lower right — in view
+ * while the pointer is on the square, the same one a plugin row carries —
+ * deletes it. Neither is offered while the square is still uploading, its
+ * media not being there to replace or delete yet.
  */
-function MediaTile({ media }: { media: LibraryMedia }) {
-  const [loaded, setLoaded] = useState(false);
+function MediaTile({
+  media,
+  onReplace,
+  onDelete,
+}: {
+  media: LibraryMedia;
+  onReplace: (file: File) => void;
+  onDelete: () => void;
+}) {
+  const [loadedName, setLoadedName] = useState<string | null>(null);
   const uploading = media.filename === null;
+  const dropTarget = useDropTarget(([file]) => {
+    if (file) onReplace(file);
+  });
 
   return (
-    <Box className="media-tile">
+    <Box className="media-tile" {...dropTarget}>
       {media.filename && (
         <img
           className="media-tile-image"
           src={mediaUrl(media.filename)}
           alt={media.name}
-          data-loaded={loaded || undefined}
-          onLoad={() => setLoaded(true)}
+          data-loaded={loadedName === media.filename || undefined}
+          onLoad={() => setLoadedName(media.filename)}
         />
       )}
-      {uploading && (
+      {uploading ? (
         <Stack className="media-tile-progress" gap={4}>
           <Text size="xs" ta="center">
             {media.progress}%
           </Text>
           <Progress value={media.progress} size="xs" />
         </Stack>
+      ) : (
+        <ActionIcon
+          className="media-tile-delete"
+          color="red"
+          variant="filled"
+          size="sm"
+          aria-label={`Delete ${media.name}`}
+          onClick={onDelete}
+        >
+          <MdDelete size={14} />
+        </ActionIcon>
       )}
     </Box>
   );
 }
 
-/** One tab's own medias, under the category currently picked. The gutter
- * around it — and so each square's width — comes from the drop frame this
- * sits inside (see `.media-dropzone`). */
-function MediaList({
-  kind,
-  medias,
-}: {
-  kind: MediaKind;
-  medias: LibraryMedia[];
-}) {
-  if (medias.length === 0) {
-    return (
-      <Text size="sm" c="dimmed" pt={10}>
-        {kind === "photo" ? "No photo yet." : "No video yet."}
-      </Text>
-    );
-  }
+/** What a file has to be to be worth opening the picker on — the same
+ * extensions `mediaKindOf` checks a dropped file against, so both ways
+ * into the library offer the same files. */
+const ACCEPT_ATTRIBUTE = [...ACCEPTED_MEDIA.photo, ...ACCEPTED_MEDIA.video].join(
+  ",",
+);
+
+/**
+ * The band that adds medias, along the foot of the panel under whatever
+ * either tab is showing — a `+` and the drop message, held there while
+ * the library above it scrolls (see `.media-add`).
+ *
+ * Both ways in, in one place: a file can be dropped on it (it carries the
+ * panel's own drop handlers), or it can be clicked to pick files — the
+ * `input` behind it takes several at once, which is why the message says
+ * so. The input is cleared on the way out so picking the very same file
+ * again still fires `change`.
+ */
+function MediaAddTile({ onFiles }: { onFiles: (files: File[]) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const dropTarget = useDropTarget(onFiles);
+
   return (
-    <Stack gap="xs" pt={10}>
-      {medias.map((media) => (
-        <MediaTile key={media.key} media={media} />
+    <UnstyledButton
+      className="media-add"
+      onClick={() => input.current?.click()}
+      {...dropTarget}
+    >
+      <MdAdd size={28} />
+      <Text size="xs" c="dimmed" ta="center">
+        Drop images or videos here, or click to pick them
+      </Text>
+      <input
+        ref={input}
+        type="file"
+        multiple
+        accept={ACCEPT_ATTRIBUTE}
+        hidden
+        // The input is inside the button it's opened from, so the click
+        // opening it would bubble straight back into that handler and
+        // open it again — it stops here instead.
+        onClick={(event) => event.stopPropagation()}
+        onChange={(event) => {
+          onFiles(Array.from(event.target.files ?? []));
+          event.target.value = "";
+        }}
+      />
+    </UnstyledButton>
+  );
+}
+
+/**
+ * One tab's own medias, under the category currently picked. They run
+ * across as many columns as the panel is showing (see `.media-list`,
+ * which is what a second column turns into a grid), flush against each
+ * other and against the panel's edges, ruled rather than spaced — every
+ * line of the grid except the one above its first row and its own two
+ * sides. What adds more is the band at the foot of the panel, outside
+ * this.
+ *
+ * Whatever the last attempt to add, replace or delete one had to say goes
+ * above the list rather than under it — a library of any size scrolls,
+ * and a message below it would be off-screen exactly when it matters —
+ * and outside it rather than in it: the list's children are its squares
+ * and nothing else, which is what lets the rule between two columns be
+ * drawn off each square's own position in it.
+ */
+function MediaList({
+  medias,
+  columns,
+  onReplace,
+  onDelete,
+  error,
+}: {
+  medias: LibraryMedia[];
+  columns: MediaColumns;
+  onReplace: (media: LibraryMedia, file: File) => void;
+  onDelete: (media: LibraryMedia) => void;
+  error: string | null;
+}) {
+  return (
+    <>
+      {error && (
+        <Text className="media-error" size="xs" c="red">
+          {error}
+        </Text>
+      )}
+      <Stack className="media-list" data-columns={columns} gap={0}>
+        {medias.map((media) => (
+          <MediaTile
+            key={media.key}
+            media={media}
+            onReplace={(file) => onReplace(media, file)}
+            onDelete={() => onDelete(media)}
+          />
+        ))}
+        {/* A row the medias leave half empty still belongs to the grid:
+            the cell is drawn even though nothing is in it, so the rules
+            around it — the one above the row, the one down the middle —
+            run the width of the list like every other. */}
+        {columns === 2 && medias.length % 2 === 1 && (
+          <Box className="media-tile" aria-hidden />
+        )}
+      </Stack>
+    </>
+  );
+}
+
+/**
+ * The pair facing the category picker across the top row: one square per
+ * row, or two. They read as one control — whichever is in force is lit,
+ * the other is dimmed — and wear the same hover as the Properties tab's
+ * own expand toggle, an icon-only control of exactly the same kind (see
+ * `.inspector-expand-toggle`).
+ */
+function ColumnPicker({
+  columns,
+  onChange,
+}: {
+  columns: MediaColumns;
+  onChange: (columns: MediaColumns) => void;
+}) {
+  const choices = [
+    { value: 1, label: "One column", icon: <TbColumns1 size={18} /> },
+    { value: 2, label: "Two columns", icon: <TbColumns2 size={18} /> },
+  ] as const;
+
+  return (
+    // The group's own 3px is given back so the first icon still starts on
+    // the 15px gutter the row is padded to, its button's padding being
+    // what it hovers with.
+    <Group gap={2} ml={-3}>
+      {choices.map((choice) => (
+        <UnstyledButton
+          key={choice.value}
+          className="media-columns-toggle"
+          data-active={columns === choice.value || undefined}
+          aria-label={choice.label}
+          aria-pressed={columns === choice.value}
+          onClick={() => onChange(choice.value)}
+          style={{ display: "flex", alignItems: "center" }}
+        >
+          {choice.icon}
+        </UnstyledButton>
       ))}
-    </Stack>
+    </Group>
   );
 }
 
 type Props = {
   opened: boolean;
   onToggle: () => void;
+  columns: MediaColumns;
+  onColumnsChange: (columns: MediaColumns) => void;
 };
 
 /**
@@ -157,7 +365,12 @@ type Props = {
  * been added is held here for the session and the panel is back to its
  * drop zone on the next reload.
  */
-export default function Media({ opened, onToggle }: Props) {
+export default function Media({
+  opened,
+  onToggle,
+  columns,
+  onColumnsChange,
+}: Props) {
   const [tab, setTab] = useState<MediaKind>("photo");
   const [categories, setCategories] = useState<MediaCategoryData[]>([]);
   // Held by id rather than by object so a rename (which replaces the row)
@@ -171,13 +384,10 @@ export default function Media({ opened, onToggle }: Props) {
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const [medias, setMedias] = useState<LibraryMedia[]>([]);
-  const [dragging, setDragging] = useState(false);
   const [dropError, setDropError] = useState<string | null>(null);
-  // `dragenter`/`dragleave` fire again for every child the pointer crosses
-  // inside the zone, so the two are counted against each other rather than
-  // read one at a time — otherwise the frame flickers off the moment the
-  // pointer reaches the icon or the label.
-  const dragDepth = useRef(0);
+  // Which media the delete button was pressed on, and so what the
+  // confirmation below is asking about.
+  const [deletingMedia, setDeletingMedia] = useState<LibraryMedia | null>(null);
 
   const activeCategory =
     categories.find((item) => item.id === activeCategoryId) ?? null;
@@ -238,6 +448,14 @@ export default function Media({ opened, onToggle }: Props) {
     setConfirmDelete(false);
   }
 
+  /** Changes one media in place, wherever it has got to in the list. */
+  const patchMedia = (key: string, fields: Partial<LibraryMedia>) =>
+    setMedias((current) =>
+      current.map((media) =>
+        media.key === key ? { ...media, ...fields } : media,
+      ),
+    );
+
   async function addFiles(files: File[]) {
     // Whatever the device would turn away is turned away here first, so a
     // stray file says why instead of coming back as a bare 400 from
@@ -271,66 +489,117 @@ export default function Media({ opened, onToggle }: Props) {
       return;
     }
     setDropError(null);
-    for (const { file, kind } of accepted) {
-      // Its square goes up first, at 0%, and fills in as the file goes
-      // out — the panel shows the upload rather than waiting on it.
-      const key = randomId();
-      setMedias((current) => [
-        ...current,
-        {
-          key,
-          kind,
-          name: file.name,
-          categoryId,
-          progress: 0,
-          filename: null,
-        },
-      ]);
-      const patch = (fields: Partial<LibraryMedia>) =>
-        setMedias((current) =>
-          current.map((media) =>
-            media.key === key ? { ...media, ...fields } : media,
-          ),
-        );
-      try {
-        const stored = await uploadMedia(file, categoryId, (progress) =>
-          patch({ progress }),
-        );
-        patch({ progress: 100, filename: stored.filename });
-      } catch (error) {
-        // The square goes with it: there is no media to show, and the
-        // message below says why.
-        setMedias((current) => current.filter((media) => media.key !== key));
-        setDropError(
-          error instanceof Error ? error.message : "Could not add the file",
-        );
-      }
+    // All of them at once rather than one after another: several files
+    // added together go out side by side, each square showing its own
+    // file's progress, instead of queueing behind the first.
+    await Promise.all(
+      accepted.map(async ({ file, kind }) => {
+        // Its square goes up first, at 0%, and fills in as the file goes
+        // out — the panel shows the upload rather than waiting on it.
+        const key = randomId();
+        setMedias((current) => [
+          ...current,
+          {
+            key,
+            kind,
+            name: file.name,
+            categoryId,
+            progress: 0,
+            filename: null,
+          },
+        ]);
+        try {
+          const stored = await uploadMedia(file, categoryId, (progress) =>
+            patchMedia(key, { progress }),
+          );
+          patchMedia(key, { progress: 100, filename: stored.filename });
+        } catch (error) {
+          // The square goes with it: there is no media to show, and the
+          // message below says why.
+          setMedias((current) => current.filter((media) => media.key !== key));
+          setDropError(
+            error instanceof Error ? error.message : "Could not add the file",
+          );
+        }
+      }),
+    );
+  }
+
+  /**
+   * Puts a new file behind a media that is already there — what dropping
+   * one onto another's square does. The square shows the new file going
+   * out exactly as a fresh one does, and is back to the media it was
+   * showing if it doesn't make it.
+   */
+  async function replaceFile(media: LibraryMedia, file: File) {
+    const previous = media.filename;
+    // Nothing to replace until the media it holds is actually there.
+    if (previous === null) return;
+    if (file.size > MAX_MEDIA_BYTES) {
+      setDropError(
+        `${file.name}: over the ${Math.round(
+          MAX_MEDIA_BYTES / (1024 * 1024),
+        )} MB limit.`,
+      );
+      return;
+    }
+    const kind = mediaKindOf(file);
+    if (kind === null) {
+      setDropError(
+        "Images must be PNG or JPEG; videos MP4, M4V, MOV, MKV, WEBM or AVI.",
+      );
+      return;
+    }
+    // A square stays in the tab it is being shown under, which is also
+    // what KBRD-API holds a replacement to.
+    if (kind !== media.kind) {
+      setDropError(
+        media.kind === "photo"
+          ? "A photo can only be replaced by another photo."
+          : "A video can only be replaced by another video.",
+      );
+      return;
+    }
+    setDropError(null);
+    patchMedia(media.key, { progress: 0, filename: null });
+    try {
+      const stored = await replaceMedia(previous, file, (progress) =>
+        patchMedia(media.key, { progress }),
+      );
+      patchMedia(media.key, {
+        progress: 100,
+        filename: stored.filename,
+        name: stored.name,
+      });
+    } catch (error) {
+      patchMedia(media.key, { progress: 100, filename: previous });
+      setDropError(
+        error instanceof Error ? error.message : "Could not replace the media",
+      );
     }
   }
 
-  // Both drop targets — the empty state and each tab's own panel — take
-  // the same handlers and wear the same frame, so dropping works wherever
-  // the library happens to be showing.
-  const dropTarget = {
-    "data-dragging": dragging || undefined,
-    onDragEnter: (event: DragEvent) => {
-      event.preventDefault();
-      dragDepth.current += 1;
-      setDragging(true);
-    },
-    onDragOver: (event: DragEvent) => event.preventDefault(),
-    onDragLeave: (event: DragEvent) => {
-      event.preventDefault();
-      dragDepth.current -= 1;
-      if (dragDepth.current <= 0) setDragging(false);
-    },
-    onDrop: (event: DragEvent) => {
-      event.preventDefault();
-      dragDepth.current = 0;
-      setDragging(false);
-      void addFiles(Array.from(event.dataTransfer.files));
-    },
-  };
+  /** Confirmed from the dialog below, never straight off the button. */
+  async function removeMedia(media: LibraryMedia) {
+    setDeletingMedia(null);
+    if (media.filename === null) return;
+    try {
+      await deleteMedia(media.filename);
+      setMedias((current) =>
+        current.filter((item) => item.key !== media.key),
+      );
+      setDropError(null);
+    } catch (error) {
+      setDropError(
+        error instanceof Error ? error.message : "Could not delete the media",
+      );
+    }
+  }
+
+  // The empty state's own drop target. Every other one belongs to the
+  // square that wears it — the one that adds medias, and each media's own
+  // (see `useDropTarget`).
+  const dropTarget = useDropTarget((files) => void addFiles(files));
 
   const shown = (kind: MediaKind) =>
     medias.filter(
@@ -379,7 +648,8 @@ export default function Media({ opened, onToggle }: Props) {
       >
         {/* The category applies to both tabs, so it sits above the strip
             rather than inside either panel. */}
-        <Group justify="flex-end" px={15} pt={15} pb={15}>
+        <Group justify="space-between" px={15} pt={15} pb={15}>
+          <ColumnPicker columns={columns} onChange={onColumnsChange} />
           <Category
             categories={categories}
             activeCategory={activeCategory}
@@ -423,18 +693,35 @@ export default function Media({ opened, onToggle }: Props) {
               <Tabs.Tab value="video">Video</Tabs.Tab>
             </Tabs.List>
 
-            <Tabs.Panel value="photo" pb="lg">
-              <Box className="media-dropzone" {...dropTarget}>
-                <MediaList kind="photo" medias={shown("photo")} />
-              </Box>
+            {/* The panels themselves aren't drop targets any more — the
+                square at the foot of each list is the one, and says so. */}
+            <Tabs.Panel value="photo">
+              <MediaList
+                medias={shown("photo")}
+                columns={columns}
+                onReplace={(media, file) => void replaceFile(media, file)}
+                onDelete={setDeletingMedia}
+                error={dropError}
+              />
             </Tabs.Panel>
 
-            <Tabs.Panel value="video" pb="lg">
-              <Box className="media-dropzone" {...dropTarget}>
-                <MediaList kind="video" medias={shown("video")} />
-              </Box>
+            <Tabs.Panel value="video">
+              <MediaList
+                medias={shown("video")}
+                columns={columns}
+                onReplace={(media, file) => void replaceFile(media, file)}
+                onDelete={setDeletingMedia}
+                error={dropError}
+              />
             </Tabs.Panel>
           </Tabs>
+        )}
+
+        {/* Along the foot of the panel whichever tab is showing — and
+            only once there is a library at all: an empty one is the drop
+            zone above, which is already asking for the same thing. */}
+        {medias.length > 0 && (
+          <MediaAddTile onFiles={(files) => void addFiles(files)} />
         )}
 
         {editorMode && (
@@ -448,6 +735,23 @@ export default function Media({ opened, onToggle }: Props) {
             }}
             onNameChange={() => setEditorError(null)}
             onSubmit={(name) => void submitCategory(name)}
+          />
+        )}
+
+        {deletingMedia && (
+          <Confirmation
+            title="Delete media"
+            message={
+              <>
+                Delete{" "}
+                <Text component="span" fw={600}>
+                  {deletingMedia.name}
+                </Text>
+                ?
+              </>
+            }
+            onConfirm={() => void removeMedia(deletingMedia)}
+            onCancel={() => setDeletingMedia(null)}
           />
         )}
 

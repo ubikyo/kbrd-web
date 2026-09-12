@@ -18,13 +18,14 @@ import type { FactoryLayout, LayoutData } from "./types/layout";
 import Composer from "./components/Composer";
 import Header from "./components/Header";
 import Inspector, { INSPECTOR_PANEL_WIDTH } from "./components/Inspector";
-import Media, { MEDIA_PANEL_WIDTH } from "./components/Media";
+import Media from "./components/Media";
 import Settings from "./components/modals/Settings";
 import LayerEditor from "./components/modals/LayerEditor";
 import ReplaceEntity from "./components/modals/ReplaceEntity";
 import Confirmation from "./components/modals/Confirmation";
 import { updateFactoryLayout } from "./api/layers";
 import { maxItems } from "./utils/layout";
+import { mediaPanelWidth, type MediaColumns } from "./utils/mediaPanel";
 import type { LayerData } from "./types/layer";
 import { useDisplayGrid } from "./classes/useDisplayGrid";
 import { useDisplaySettings } from "./classes/useDisplaySettings";
@@ -76,6 +77,10 @@ export default function App() {
   const [inspectorPanel, setInspectorPanel] =
     useState<PanelState>(loadInspectorPanel);
   const [mediaOpened, setMediaOpened] = useState(() => mediaPanel === "open");
+  // How wide the Media panel opens: one column's worth, or two. The panel
+  // itself only draws the switch (see `Media`) — the width is the track's
+  // own business, and the track is here.
+  const [mediaColumns, setMediaColumns] = useState<MediaColumns>(1);
   const [inspectorOpened, setInspectorOpened] = useState(
     () => inspectorPanel === "open",
   );
@@ -325,15 +330,19 @@ export default function App() {
           <Box
             className="media-panel"
             data-opened={mediaOpened || undefined}
-            style={{ flexBasis: mediaOpened ? MEDIA_PANEL_WIDTH : 0 }}
+            style={{
+              flexBasis: mediaOpened ? mediaPanelWidth(mediaColumns) : 0,
+            }}
           >
             <Box
               className="media-panel-inner"
-              style={{ width: MEDIA_PANEL_WIDTH }}
+              style={{ width: mediaPanelWidth(mediaColumns) }}
             >
               <Media
                 opened={mediaOpened}
                 onToggle={() => setMediaOpened((opened) => !opened)}
+                columns={mediaColumns}
+                onColumnsChange={setMediaColumns}
               />
             </Box>
           </Box>

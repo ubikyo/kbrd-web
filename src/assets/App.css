@@ -12,6 +12,7 @@ body,
   min-height: 100%;
 }
 
+
 body {
   margin: 0;
   background-color: var(--kbrd-color-body);
@@ -82,12 +83,12 @@ body.debug * {
 }
 
 /* The rule between items — and the one closing the list below — is the
-   app's own line, not Mantine's dark-scheme grey, so both Inspector lists
-   are drawn in the same colour. Set on the item itself: that is where
-   Mantine declares the variable, and a value declared on an element beats
-   one inherited from its parent. */
+   app's own list rule, not Mantine's dark-scheme grey, so both Inspector
+   lists are drawn like the Media panel's grid. Set on the item itself:
+   that is where Mantine declares the variable, and a value declared on an
+   element beats one inherited from its parent. */
 .property-accordion > .mantine-Accordion-item {
-  --item-border-color: var(--kbrd-border-color);
+  --item-border-color: var(--kbrd-rule-color);
 }
 
 /* Mantine only draws the separator *below* each item, so the first one
@@ -308,7 +309,13 @@ body.debug * {
    edge. */
 .media-panel-inner {
   transform: translateX(-100%);
-  transition: transform 220ms ease;
+  /* `width` as well as `transform`: the panel is as wide as the column
+     count its switch is on (see `Media`/`App`), and a second column is
+     meant to slide open at the same rate the track beside it does — both
+     run on the 220ms below. */
+  transition:
+    transform 220ms ease,
+    width 220ms ease;
 }
 
 .media-panel[data-opened] .media-panel-inner {
@@ -352,6 +359,28 @@ body.debug * {
   border-radius: 5px 0 0 5px;
 }
 
+/* The one-column / two-column pair at the head of the panel, facing the
+   category picker (see `ColumnPicker`). Icon-only, so they take the same
+   hover as the Properties tab's own expand toggle rather than a button's
+   chrome; the one in force is lit and the other sits back, which is what
+   makes the two read as one control. */
+.media-columns-toggle {
+  padding: 3px;
+  border-radius: 2px;
+  color: var(--mantine-color-dark-2);
+  transition:
+    background-color 120ms ease,
+    color 120ms ease;
+}
+
+.media-columns-toggle:hover {
+  background: #171717;
+}
+
+.media-columns-toggle[data-active] {
+  color: var(--mantine-color-white);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .media-panel,
   .media-panel-inner,
@@ -360,28 +389,23 @@ body.debug * {
   }
 }
 
-/* The Media panel's drop frame. The dashed rectangle sits 10px inside the
-   panel, and its own 1px border plus 4px of padding put whatever it holds
-   — the message, the squares — on the 15px gutter every other row of the
-   panel starts at (10 + 1 + 4). That also leaves a square exactly the
-   panel's width less those two gutters. The border is declared transparent
-   and only coloured while a file is over it, so nothing shifts by a pixel
-   when it appears.
+/* The Media panel's drop frame, worn by its empty state alone: with
+   nothing in the library there are no squares to drop on, so the whole
+   panel takes it. The dashed rectangle sits 10px inside the panel, and
+   its own 1px border plus 4px of padding put the message on the 15px
+   gutter every other row of the panel starts at (10 + 1 + 4). The border
+   is declared transparent and only coloured while a file is over it, so
+   nothing shifts by a pixel when it appears.
 
-   Two of them, wearing the same frame: the empty state below, and each
-   tab's own panel once the library has something to show. */
+   It takes everything from under the category picker down to the bottom
+   of the window (hence the `content` height the panel gives its
+   ScrollArea) and centres its icon and message in that. */
 .media-dropzone {
   box-sizing: border-box;
   margin: 0 10px 10px;
   padding: 4px;
   border: 1px dashed transparent;
   border-radius: 5px;
-}
-
-/* The empty state takes everything from under the category picker down to
-   the bottom of the window (hence the `content` height the panel gives its
-   ScrollArea) and centres its icon and message in that. */
-.media-dropzone[data-empty] {
   flex: 1;
   min-height: 0;
   display: flex;
@@ -395,22 +419,101 @@ body.debug * {
   border-color: var(--kbrd-border-color);
 }
 
+/* One tab's own list of squares. No room taken off any side: the squares
+   run the full width of the panel, flush against its edges and against
+   each other, and are told apart by the rules between them alone. The
+   rule closing the list at the bottom is the add band's own top border
+   (see `.media-add`), which sits directly under it. */
+.media-list {
+  margin: 0;
+  /* The line under the last row. Every square draws the one above itself
+     (see `.media-tile`), which leaves only this one for the list — and
+     drawing it here rather than on the last square carries it across a
+     row an odd count left half empty. */
+  border-bottom: 1px solid var(--kbrd-rule-color);
+}
+
+/* Two columns, each exactly half the list — `1fr` rather than a stated
+   width, the panel's own width (`mediaPanelWidth`) being one column's
+   worth per column. Grid rather than the Stack's column flex, which is
+   what `data-columns` overrides here. */
+.media-list[data-columns="2"] {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+/* The rule down the middle, drawn by whichever square is in the
+   right-hand column — every second child of the list, the list holding
+   its squares and nothing else (see `MediaList`, which keeps its message
+   outside for exactly this, and fills a half-empty last row with a blank
+   square so this rule reaches the bottom of the grid). */
+.media-list[data-columns="2"] > .media-tile:nth-child(even) {
+  border-left: 1px solid var(--kbrd-rule-color);
+}
+
+/* Nothing above the first row — the tab strip is already the line it
+   would be drawn against. One square in a single column, both of the
+   first two in a grid. */
+.media-list[data-columns="1"] > .media-tile:first-child,
+.media-list[data-columns="2"] > .media-tile:nth-child(-n + 2) {
+  border-top: none;
+}
+
+/* The panel's own messages, above the list rather than in it — the one
+   thing here that keeps a gutter, being a line of text rather than a
+   square. */
+.media-error {
+  margin: 15px 15px 0;
+}
+
 /* One media's own square in the Media panel (see `MediaTile`). Its width
-   is whatever the drop frame around its list leaves it — the panel's 15px
-   gutter either side — and `aspect-ratio` turns that into the square's
-   height, so the panel can change width without this needing to know. The
-   5px of padding is what the image is drawn inside. */
+   is whatever its list gives it — the whole panel in a single column,
+   half of it in two — and `aspect-ratio` turns that into the square's
+   height, so neither layout has to state it. No padding: the image is
+   drawn right out to the rules around it, and what floats over it (the
+   delete button, the upload bar) keeps its own 5px inset. */
 .media-tile {
   position: relative;
   box-sizing: border-box;
   width: 100%;
   aspect-ratio: 1;
-  padding: 5px;
   background-color: var(--kbrd-color-body);
-  border: 1px solid var(--kbrd-border-color);
+  /* One rule per square, above it: squares are flush, so a border on both
+     sides of the join would draw it twice. The last row's own rule is the
+     list's (see `.media-list`), and the one between two columns is drawn
+     by the square on the right of it. */
+  border: none;
+  border-top: 1px solid var(--kbrd-rule-color);
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+/* A file dragged over a media's own square replaces what it holds (see
+   `MediaTile`), so the square lights up while it's over it. The ground
+   does the telling now that a square is ruled rather than framed — its
+   own rule goes dashed with it, but a single line is not what carries
+   this. */
+.media-tile[data-dragging] {
+  border-style: dashed;
+  background-color: var(--mantine-color-dark-6);
+}
+
+/* The button that deletes a media, in the lower right of its square and
+   5px off both of those edges. In view while the
+   pointer is on the square — and whenever it's the focused element, so
+   the keyboard reaches it too. */
+.media-tile-delete {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.media-tile:hover .media-tile-delete,
+.media-tile-delete:focus-visible {
+  opacity: 1;
 }
 
 /* Bounded on both axes rather than sized: whichever of the two the image
@@ -429,7 +532,46 @@ body.debug * {
   opacity: 1;
 }
 
-/* Along the bottom of the square, inside its own padding — the bar with
+/* The band that adds medias, along the foot of the panel (see
+   `MediaAddTile`) — the `+` and its message rather than a square of its
+   own, so it costs the library only its own height however long that
+   library gets.
+
+   Held on the bottom edge: `margin-top: auto` puts it there while the
+   list above is short, and `sticky` keeps it there once the list is long
+   enough to scroll — it never has to be scrolled to. Its own ground,
+   opaque, is what the squares pass behind, and its top border is the rule
+   that closes the list whichever of the two is happening.
+
+   No `z-index` of its own, deliberately: it comes after the squares in
+   the panel, which is already enough to paint over them, and any stacking
+   order at all would put it over the panel's own right-hand rule as well
+   (`.media-scroll::before`, which sits at 1) — that rule has to run the
+   full height of the panel, past this. */
+.media-add {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 15px;
+  background-color: var(--kbrd-color-body);
+  border-top: 1px solid var(--kbrd-rule-color);
+  color: var(--mantine-color-dimmed);
+  cursor: pointer;
+}
+
+.media-add:hover,
+.media-add[data-dragging] {
+  background-color: var(--mantine-color-dark-6);
+}
+
+/* Along the bottom of the square, inset from its edges — the bar with
    its percentage just above it. */
 .media-tile-progress {
   position: absolute;
