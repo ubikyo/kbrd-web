@@ -498,10 +498,10 @@ export default function Composer({
           className="composer-empty"
           icon={<MdKeyboardAlt size={40} />}
           title="No layout yet"
-          description="Create a layout to start composing your keyboard"
         >
           <EmptyState.Actions>
             <Button
+              color="green"
               leftSection={<MdAdd size={16} />}
               onClick={entityEditors.openAddLayout}
             >
@@ -631,8 +631,17 @@ export default function Composer({
       )}
 
       {/* The app's own mark, at the height of the pickers opposite it and
-          on the same margin the mode switch below keeps. */}
-      <img className="composer-logo" src={kbrdLogo} alt="KBRD" />
+          on the same margin the mode switch below keeps. With no layout
+          it doubles: the pickers, the mode switch and both side panels
+          have all stood down by then (see `App`), and the mark is what is
+          left holding the corner — at its usual height it would read as
+          the chrome of something that is no longer there. */}
+      <img
+        className="composer-logo"
+        data-large={noLayouts || undefined}
+        src={kbrdLogo}
+        alt="KBRD"
+      />
 
       <Group
         gap="md"
@@ -687,9 +696,14 @@ export default function Composer({
         </HoverCard>
         )}
 
-        {/* Shown whatever the mode, and whether or not there's a layout
-            at all — nothing about Settings belongs to one, and this is
-            the only place it opens from. */}
+        {/* Shown whatever the mode, but not without a layout: the empty
+            screen keeps nothing but its mark.
+
+            Note that this is the only place Settings opens from, and
+            that a device out of the box has no layout — so the Network
+            tab, and with it the Wi-Fi the keyboard is reached over,
+            can't be got at until a first layout exists. */}
+        {!noLayouts && (
         <Tooltip label="Settings" position="top" withArrow>
           <UnstyledButton
             aria-label="Settings"
@@ -699,6 +713,7 @@ export default function Composer({
             <MdSettings size={22} />
           </UnstyledButton>
         </Tooltip>
+        )}
       </Group>
 
       {/* One shared right-click context menu (see `Display`'s

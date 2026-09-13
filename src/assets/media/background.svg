@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" preserveAspectRatio="xMidYMid slice">
+  <!-- The wizard's own green, which is Mantine's: the glows are the
+       shades its Next and Finish buttons are drawn in (green 6 and 8 in
+       the light scheme and the dark one), and the ground is the same hue
+       taken down to where a background belongs. -->
+  <defs>
+    <linearGradient id="base" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#113218"/>
+      <stop offset="48%" stop-color="#143d1e"/>
+      <stop offset="100%" stop-color="#1a4d25"/>
+    </linearGradient>
+
+    <radialGradient id="glowLeft" cx="0%" cy="100%" r="75%">
+      <stop offset="0%" stop-color="#40c057" stop-opacity=".75"/>
+      <stop offset="38%" stop-color="#2f9e44" stop-opacity=".35"/>
+      <stop offset="100%" stop-color="#113218" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="glowRight" cx="100%" cy="58%" r="68%">
+      <stop offset="0%" stop-color="#37b24d" stop-opacity=".65"/>
+      <stop offset="42%" stop-color="#2b8a3e" stop-opacity=".28"/>
+      <stop offset="100%" stop-color="#113218" stop-opacity="0"/>
+    </radialGradient>
+
+    <radialGradient id="shadow" cx="53%" cy="55%" r="58%">
+      <stop offset="0%" stop-color="#04140a" stop-opacity=".55"/>
+      <stop offset="55%" stop-color="#08200f" stop-opacity=".18"/>
+      <stop offset="100%" stop-color="#08200f" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#base)"/>
+  <rect width="1200" height="800" fill="url(#glowLeft)"/>
+  <rect width="1200" height="800" fill="url(#glowRight)"/>
+  <rect width="1200" height="800" fill="url(#shadow)"/>
+</svg>

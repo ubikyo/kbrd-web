@@ -2,7 +2,7 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import { MantineProvider } from "@mantine/core";
 
-import App from "./App";
+import Setup from "./Setup";
 import { cssVariablesResolver, theme } from "@kbrd/plugins/theme";
 import { DEFAULT_COLOR_SCHEME } from "./utils/preferences";
 
@@ -25,7 +25,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
       // `index.html`), so the first paint is already the right theme.
       defaultColorScheme={DEFAULT_COLOR_SCHEME}
     >
-      <App />
+      <Setup />
     </MantineProvider>
   </React.StrictMode>,
 );

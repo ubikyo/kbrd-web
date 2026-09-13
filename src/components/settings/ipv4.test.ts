@@ -1,48 +1,30 @@
 import { describe, expect, it } from "vitest";
 
-import { isNetmask, toAddress, toDigits, toMasked } from "./ipv4";
+import { gatewayFor, isIpv4, isNetmask } from "./ipv4";
 
-describe("toDigits", () => {
-  it("pads every octet to the mask's three slots", () => {
-    expect(toDigits("192.168.1.50")).toBe("192168001050");
-    expect(toDigits("255.255.255.255")).toBe("255255255255");
-    expect(toDigits("0.0.0.0")).toBe("000000000000");
+describe("isIpv4", () => {
+  it("accepts four octets, however they are written", () => {
+    expect(isIpv4("192.168.1.50")).toBe(true);
+    expect(isIpv4("0.0.0.0")).toBe(true);
+    expect(isIpv4("255.255.255.255")).toBe(true);
+    // Padded is still the same address — it is what a mask used to make
+    // of every field, and nothing should have to unlearn it.
+    expect(isIpv4("192.168.001.050")).toBe(true);
   });
 
-  it("is empty for anything that isn't four octets", () => {
-    expect(toDigits("")).toBe("");
-    expect(toDigits("192.168.1")).toBe("");
-    expect(toDigits("192.168.1.50.7")).toBe("");
-    expect(toDigits("192.168.1.x")).toBe("");
-  });
-});
-
-describe("toAddress", () => {
-  it("drops the padding the mask holds", () => {
-    expect(toAddress("192168001050")).toBe("192.168.1.50");
-    expect(toAddress("000000000000")).toBe("0.0.0.0");
+  it("refuses an octet above 255", () => {
+    expect(isIpv4("192.168.1.256")).toBe(false);
+    expect(isIpv4("300.1.1.1")).toBe(false);
   });
 
-  // A mask reports its digits as they are typed, and a half-typed
-  // address is not a mistake — it is just not an address yet.
-  it("is empty while the field is still being filled", () => {
-    expect(toAddress("")).toBe("");
-    expect(toAddress("19216800105")).toBe("");
-  });
-
-  it("is empty for an octet above 255", () => {
-    expect(toAddress("192168001300")).toBe("");
-  });
-});
-
-describe("toMasked", () => {
-  it("spells an address the way the field shows it", () => {
-    expect(toMasked("192.168.1.50")).toBe("192.168.001.050");
-    expect(toMasked("")).toBe("");
-  });
-
-  it("round-trips through the digits", () => {
-    expect(toAddress(toDigits("10.0.0.1"))).toBe("10.0.0.1");
+  it("refuses anything that isn't four octets of digits", () => {
+    expect(isIpv4("")).toBe(false);
+    expect(isIpv4("192.168.1")).toBe(false);
+    expect(isIpv4("192.168.1.50.7")).toBe(false);
+    expect(isIpv4("192.168.1.")).toBe(false);
+    expect(isIpv4("192.168.1.x")).toBe(false);
+    expect(isIpv4(" 192.168.1.50")).toBe(false);
+    expect(isIpv4("1920.168.1.50")).toBe(false);
   });
 });
 
@@ -60,5 +42,20 @@ describe("isNetmask", () => {
     expect(isNetmask("255.255.255.1")).toBe(false);
     expect(isNetmask("192.168.1.50")).toBe(false);
     expect(isNetmask("")).toBe(false);
+  });
+});
+
+describe("gatewayFor", () => {
+  it("puts the router on the network's first address", () => {
+    expect(gatewayFor("192.168.1.50", "255.255.255.0")).toBe("192.168.1.1");
+    expect(gatewayFor("10.4.7.200", "255.255.0.0")).toBe("10.4.0.1");
+    expect(gatewayFor("172.16.34.9", "255.240.0.0")).toBe("172.16.0.1");
+  });
+
+  it("guesses nothing from half an address", () => {
+    expect(gatewayFor("192.168.1", "255.255.255.0")).toBeUndefined();
+    expect(gatewayFor("192.168.1.50", "")).toBeUndefined();
+    // Not a mask, so not a network either.
+    expect(gatewayFor("192.168.1.50", "255.0.255.0")).toBeUndefined();
   });
 });

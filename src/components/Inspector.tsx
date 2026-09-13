@@ -16,7 +16,6 @@ import {
 import {
   MdDelete,
   MdDragIndicator,
-  MdExtension,
   MdHighlightAlt,
   MdUnfoldLess,
   MdUnfoldMore,
@@ -94,14 +93,6 @@ type Props = {
   // for the system property row's own label, without a `layout`/geometry
   // lookup (see `App`'s own `selectedKeyTypeId`).
   selectedKeyTypeId: string | null;
-  // Whether any layout is loaded at all — what the panel stands down to
-  // its own empty state on, not a real `LayoutData` consumer.
-  hasLayout: boolean;
-  // And whether the list has actually been fetched yet (see `App`): until
-  // it has, `hasLayout` is false only because nothing has arrived, and
-  // standing down on that would flash the empty state on every load. Same
-  // guard the Composer's own empty states keep.
-  layoutsLoaded: boolean;
   // Which form each plugin instance below shows: its Layout (placement) or
   // Layer (everything else) editor — see `kbrd-plugins`' per-plugin
   // `LayoutEditor`/`LayerEditor` exports.
@@ -131,6 +122,12 @@ type Props = {
  * the panel's left edge, so while the panel is pushed off-screen the tab
  * is all that shows, sitting on the window's right edge — that's what
  * opens it. Same arrangement as the Media panel, mirrored.
+ *
+ * Neither tab has anything to show without a layout — Plugins has nothing
+ * to drag onto, Properties nothing to select — so with none at all this
+ * isn't mounted: `App` drops both side panels, tab included, leaving the
+ * Composer's own "No layout yet" alone on screen. Nothing here has to
+ * account for that case.
  */
 export default function Inspector({
   opened,
@@ -141,8 +138,6 @@ export default function Inspector({
   onTabChange,
   onChange,
   selectedKeyTypeId,
-  hasLayout,
-  layoutsLoaded,
   mode,
   layoutSelection,
   onLayoutCellChange,
@@ -512,26 +507,6 @@ export default function Inspector({
         {/* The room above the tabs is the panel's, not its container's, so
             the scrollbar runs the full height of the Inspector rather than
             starting at the tabs. It scrolls away with the content. */}
-        {layoutsLoaded && !hasLayout ? (
-          // Neither tab has anything to show without a layout — Plugins
-          // has nothing to drag onto, Properties nothing to select — so
-          // the strip goes with them and the panel stands down to a
-          // single line, the way the Composer beside it does (see its own
-          // "No layout yet").
-          <EmptyState
-            className="inspector-empty"
-            px={15}
-            icon={<MdExtension size={28} />}
-            title="No layout yet"
-            description={
-              <>
-                Create a layout
-                <br />
-                to add plugins.
-              </>
-            }
-          />
-        ) : (
         <Tabs
           pt={40}
           className="panel-tabs"
@@ -703,7 +678,7 @@ export default function Inspector({
                       every row of every group at once, and closes them all
                       again once they are open. */}
                   <UnstyledButton
-                    className="inspector-expand-toggle"
+                    className="icon-toggle"
                     aria-label={
                       allPropertiesOpen
                         ? "Collapse all properties"
@@ -714,7 +689,6 @@ export default function Inspector({
                         allPropertiesOpen ? [] : allPropertyValues,
                       )
                     }
-                    style={{ display: "flex", alignItems: "center" }}
                   >
                     {allPropertiesOpen ? (
                       <MdUnfoldLess size={16} />
@@ -772,7 +746,6 @@ export default function Inspector({
             )}
           </Tabs.Panel>
         </Tabs>
-        )}
 
         <Modal
           opened={deleting !== null}

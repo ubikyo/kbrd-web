@@ -1,42 +1,21 @@
 /**
- * The IPv4 fields of the Network tab are masked inputs (`999.999.999.999`),
- * and a mask holds one character per slot: twelve digits, every octet
- * padded to three. That spelling is what the field works in, and it is
- * never what an address *is* — hence this pair of conversions, and a
- * draft that keeps the digits rather than the address.
+ * What counts as an IPv4 address, and what counts as a netmask.
  *
- * Keeping the digits matters: "19216800105" is eleven slots of a real
- * address being typed, and turning it into an address on every keystroke
- * would throw away the difference between half-typed and empty.
+ * Addresses are held and shown exactly as they are typed — there is no
+ * mask over these fields, so `192.168.1.50` stays `192.168.1.50` rather
+ * than being padded out to fill a fixed run of slots. Everything below is
+ * only ever asked whether what is there is an address yet.
  */
 
-/** The number of digit slots in `999.999.999.999`. */
-export const IPV4_DIGITS = 12;
+/** Four runs of one to three digits, separated by dots, and nothing
+ * else. The range of each octet is checked in `isIpv4` — a regular
+ * expression that also ruled out 256 would be write-only. */
+const IPV4 = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
 
-export const IPV4_MASK = "999.999.999.999";
-
-/** `"192.168.1.50"` → `"192168001050"`. Empty for anything that isn't
- * four octets — including the empty string a field starts on. */
-export function toDigits(address: string): string {
-  const octets = address.split(".");
-  if (octets.length !== 4) return "";
-  if (octets.some((octet) => !/^\d{1,3}$/.test(octet))) return "";
-  return octets.map((octet) => octet.padStart(3, "0")).join("");
-}
-
-/** `"192168001050"` → `"192.168.1.50"`, and `""` while the address is
- * still being typed or an octet is above 255. */
-export function toAddress(digits: string): string {
-  if (digits.length !== IPV4_DIGITS) return "";
-  const octets = [0, 3, 6, 9].map((at) => Number(digits.slice(at, at + 3)));
-  if (octets.some((octet) => octet > 255)) return "";
-  return octets.join(".");
-}
-
-/** What the field is mounted with: `"192.168.1.50"` → `"192.168.001.050"`. */
-export function toMasked(address: string): string {
-  const digits = toDigits(address);
-  return digits ? digits.replace(/(\d{3})(?=\d)/g, "$1.") : "";
+export function isIpv4(value: string): boolean {
+  const match = IPV4.exec(value);
+  if (!match) return false;
+  return match.slice(1).every((octet) => Number(octet) <= 255);
 }
 
 /**
@@ -45,11 +24,36 @@ export function toMasked(address: string): string {
  * taken by iwd and produce a keyboard nobody can reach. KBRD-API refuses
  * it too; this is so the field says so before the save is attempted.
  */
-export function isNetmask(address: string): boolean {
-  if (!address) return false;
-  const bits = address
+export function isNetmask(value: string): boolean {
+  if (!isIpv4(value)) return false;
+  const bits = value
     .split(".")
     .reduce((accumulator, octet) => accumulator * 256 + Number(octet), 0);
   const inverted = ~bits >>> 0;
   return (inverted & (inverted + 1)) === 0;
+}
+
+/**
+ * The gateway a network of this shape almost always has: the address and
+ * the mask give the network, and the router sits on its first host —
+ * `192.168.1.50/255.255.255.0` puts it at `192.168.1.1`.
+ *
+ * A guess, and offered as one: the field stays editable, and a network
+ * whose router lives somewhere else is simply typed over. `undefined`
+ * when either half isn't one yet, so nothing is guessed from half an
+ * address.
+ */
+export function gatewayFor(
+  address: string,
+  netmask: string,
+): string | undefined {
+  if (!isIpv4(address) || !isNetmask(netmask)) return undefined;
+  const host = address.split(".").map(Number);
+  const mask = netmask.split(".").map(Number);
+  const network = host.map((octet, at) => octet & mask[at]);
+  // The last octet rather than the first host of the network: on
+  // anything wider than a /24 the two differ, and this is the one that
+  // reads as "the router".
+  network[3] = 1;
+  return network.join(".");
 }

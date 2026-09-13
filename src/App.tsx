@@ -227,6 +227,14 @@ export default function App() {
     onSelect: changeLayout,
   });
 
+  // No layout at all — not "none loaded yet": a non-empty list always
+  // selects one (see `useLayouts`), so this is the state the Composer
+  // stands down to its "No layout yet" invitation on. Both side panels go
+  // with it: the Media library has nothing to drag onto and the Inspector
+  // nothing to inspect, and leaving their tabs on the window's edges would
+  // offer two panels with nothing in them.
+  const noLayouts = layouts.loaded && layouts.items.length === 0;
+
   const entityEditors = useEntityEditors({
     layout,
     layer,
@@ -342,31 +350,39 @@ export default function App() {
             overflow: "hidden",
           }}
         >
-          {/* Always mounted — its track is what opens and closes (200px
-              to none), while the panel itself slides in from off-screen
-              left. Both run on the same transition, so the panel's right
-              edge never leaves the track's: the Composer takes up the
-              room at exactly the rate the panel leaves it. See
-              `.media-panel` in App.css. */}
-          <Box
-            className="media-panel"
-            data-opened={mediaOpened || undefined}
-            style={{
-              flexBasis: mediaOpened ? mediaPanelWidth(mediaColumns) : 0,
-            }}
-          >
+          {/* Mounted for as long as there is a layout — its track is
+              what opens and closes (200px to none), while the panel
+              itself slides in from off-screen left. Both run on the same
+              transition, so the panel's right edge never leaves the
+              track's: the Composer takes up the room at exactly the rate
+              the panel leaves it. See `.media-panel` in App.css.
+
+              With no layout the whole track goes rather than closing:
+              closed still leaves the tab on the window's edge, and there
+              is nothing behind it to open onto. Whether it was open is
+              kept in state either way, so it comes back as it was on the
+              first layout created. */}
+          {!noLayouts && (
             <Box
-              className="media-panel-inner"
-              style={{ width: mediaPanelWidth(mediaColumns) }}
+              className="media-panel"
+              data-opened={mediaOpened || undefined}
+              style={{
+                flexBasis: mediaOpened ? mediaPanelWidth(mediaColumns) : 0,
+              }}
             >
-              <Media
-                opened={mediaOpened}
-                onToggle={() => setMediaOpened((opened) => !opened)}
-                columns={mediaColumns}
-                onColumnsChange={setMediaColumns}
-              />
+              <Box
+                className="media-panel-inner"
+                style={{ width: mediaPanelWidth(mediaColumns) }}
+              >
+                <Media
+                  opened={mediaOpened}
+                  onToggle={() => setMediaOpened((opened) => !opened)}
+                  columns={mediaColumns}
+                  onColumnsChange={setMediaColumns}
+                />
+              </Box>
             </Box>
-          </Box>
+          )}
           <Box style={{ flex: 1, minWidth: 0, height: "100%" }}>
             <Composer
               layoutSettings={layoutSettings}
@@ -394,42 +410,51 @@ export default function App() {
               onLayerItemsChange={handleLayerItemsChange}
             />
           </Box>
-          <Box
-            className="inspector-panel"
-            data-opened={inspectorOpened || undefined}
-            style={{ flexBasis: inspectorOpened ? INSPECTOR_PANEL_WIDTH : 0 }}
-          >
+          {/* Dropped with the Media panel, and for the same reason —
+              see there. */}
+          {!noLayouts && (
             <Box
-              className="inspector-panel-inner"
-              style={{ width: INSPECTOR_PANEL_WIDTH }}
+              className="inspector-panel"
+              data-opened={inspectorOpened || undefined}
+              style={{ flexBasis: inspectorOpened ? INSPECTOR_PANEL_WIDTH : 0 }}
             >
-              <Inspector
-                opened={inspectorOpened}
-                onToggle={() => setInspectorOpened((value) => !value)}
-                layer={layer}
-                selectedKey={selectedKey}
-                selectedKeyTypeId={selectedKeyTypeId}
-                hasLayout={layout != null}
-                layoutsLoaded={layouts.loaded}
-                mode={mode}
-                layoutSelection={
-                  grid.divisionSelection
-                    ? { index: grid.divisionSelection.subId, cell: grid.divisionSelection.cell }
-                    : grid.layoutSelection
-                }
-                onLayoutCellChange={
-                  grid.divisionSelection
-                    ? (subId, patch) =>
-                        grid.changeDivisionCell(grid.divisionSelection!.parentId, subId, patch)
-                    : grid.changeCell
-                }
-                tab={inspectorTab}
-                onTabChange={setInspectorTab}
-                onChange={changePlugins}
-                onKeyPropertiesChange={changeKeyProperties}
-              />
+              <Box
+                className="inspector-panel-inner"
+                style={{ width: INSPECTOR_PANEL_WIDTH }}
+              >
+                <Inspector
+                  opened={inspectorOpened}
+                  onToggle={() => setInspectorOpened((value) => !value)}
+                  layer={layer}
+                  selectedKey={selectedKey}
+                  selectedKeyTypeId={selectedKeyTypeId}
+                  mode={mode}
+                  layoutSelection={
+                    grid.divisionSelection
+                      ? {
+                          index: grid.divisionSelection.subId,
+                          cell: grid.divisionSelection.cell,
+                        }
+                      : grid.layoutSelection
+                  }
+                  onLayoutCellChange={
+                    grid.divisionSelection
+                      ? (subId, patch) =>
+                          grid.changeDivisionCell(
+                            grid.divisionSelection!.parentId,
+                            subId,
+                            patch,
+                          )
+                      : grid.changeCell
+                  }
+                  tab={inspectorTab}
+                  onTabChange={setInspectorTab}
+                  onChange={changePlugins}
+                  onKeyPropertiesChange={changeKeyProperties}
+                />
+              </Box>
             </Box>
-          </Box>
+          )}
         </Box>
       </AppShell.Main>
       {entityEditors.layoutEditorOpened && (

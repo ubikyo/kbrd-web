@@ -372,7 +372,7 @@ function MediaList({
  * row, or two. They read as one control — whichever is in force is lit,
  * the other is dimmed — and wear the same hover as the Properties tab's
  * own expand toggle, an icon-only control of exactly the same kind (see
- * `.inspector-expand-toggle`).
+ * `.icon-toggle`).
  */
 function ColumnPicker({
   columns,

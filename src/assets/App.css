@@ -6,6 +6,21 @@
   font-display: swap;
 }
 
+/* The setup wizard's own heading face. Bundled with the app rather than
+   served from the device's own `data/fonts` the way Inter above is (see
+   KBRD-API's `/api/fonts`): it dresses one heading on one page, and Vite
+   emits it beside the bundle from the relative URL below.
+
+   One cut of it, Regular, at the weight the heading asks for — there is
+   no second face here to bold against. */
+@font-face {
+  font-family: "KBRD Kedebideri";
+  src: url("./fonts/Kedebideri-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+}
+
 html,
 body,
 #root {
@@ -285,6 +300,21 @@ body.debug * {
   display: block;
   height: 22px;
   width: auto;
+
+  /* It only ever changes size when a layout is created or the last one
+     deleted, and it moves nothing else — nothing shares its corner. */
+  transition:
+    height 220ms ease,
+    left 220ms ease;
+}
+
+/* Twice the height with no layout at all (see `Composer`), the width
+   following as it always does — and pulled in to the same margin it
+   keeps from the top, so the mark sits square in the corner rather than
+   on the indent the Layout picker opposite it used to need. */
+.composer-logo[data-large] {
+  height: 44px;
+  left: 20px;
 }
 
 /* The "+" (Add layer) button at the bottom of the `Layer` picker's
@@ -668,14 +698,20 @@ body.debug * {
    row rather than a button's own chrome; the padding it hovers with is
    given back as margin, leaving the icon on the 15px the group labels
    below it start at. */
-.inspector-expand-toggle {
+/* An icon on its own, with no ground until it is pointed at: the
+   Inspector's expand/collapse toggle, the wizard's rescan. Negative
+   margin against its own padding, so the hover has room without the icon
+   moving off whatever it is lined up with. */
+.icon-toggle {
+  display: flex;
+  align-items: center;
   margin: -3px;
   padding: 3px;
   border-radius: 2px;
   transition: background-color 120ms ease;
 }
 
-.inspector-expand-toggle:hover {
+.icon-toggle:hover {
   background: var(--kbrd-color-hover);
 }
 
@@ -723,3 +759,395 @@ body.debug * {
   border-color: var(--kbrd-color-selected);
 }
 
+
+/* --------------------------------------------------------------------------
+   The first-run wizard (see `setup/SetupWizard`)
+   -------------------------------------------------------------------------- */
+
+/* The whole window, and nothing else on screen behind it: the wizard
+   down the left, the art filling whatever is left of the width (see
+   `.setup-art`). A row here, and a column of flex boxes all the way down
+   inside it rather than a page that grows — that is what keeps the steps
+   and Back/Next on screen whatever the step is asking for. */
+.setup-page {
+  /* A field's label, everywhere in the wizard: the scan button's own box
+     — 18px of icon inside 3px of padding — and the room under it. Both,
+     not just the gap: a label centred in that box stands ~2px clear of
+     its own text before the margin even starts, so a step that took the
+     margin alone would still sit tighter than the Wi-Fi one. */
+  --setup-label-height: 24px;
+  --setup-label-gap: 2px;
+  /* What the step being answered stands clear of the strip of steps
+     above it. Under the strip rather than inside it — padding on the
+     group itself would only make the grey taller. */
+  --setup-panel-padding: 80px;
+
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  overflow: hidden;
+}
+
+/* The wizard's own column: 550px of content inside 50px a side, 80px over
+   the title and 50px under Back/Next — which then stand off the bottom
+   edge by the same 50px the art keeps beside them. The padding lives here rather than on the
+   page so that the art can run to the window's edges — the room around
+   the wizard belongs to the wizard, not to the page.
+
+   It gives way rather than pushing the art off screen (`flex: 0 1`), so
+   a window between the two widths narrows the wizard first. */
+.setup-shell {
+  flex: 0 1 650px;
+  min-width: 0;
+  min-height: 0;
+  padding: 80px 50px 50px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Everything the wizard leaves, edge to edge. Decoration and nothing
+   else — it is in the CSS rather than in the wizard's markup for the same
+   reason it is `aria-hidden` there: there is nothing in it to read.
+
+   `cover` over the file's own `slice`: the SVG is a 1200 × 800 wash of
+   gradients with no detail to lose, so whatever the column's shape turns
+   out to be, it is filled by cropping rather than by stretching. */
+.setup-art {
+  flex: 1;
+  min-width: 0;
+  /* 50px off three of the window's edges; the fourth is the wizard's,
+     and the art starts where its column ends.
+
+     A margin rather than padding, because of the corners below: a
+     background clipped inside padding has its radii cut back by that
+     padding's own width, which at 50px against 15 would leave the corners
+     square again. This way the box that is painted is the box that is
+     rounded. */
+  margin: 50px 50px 50px 0;
+  border-radius: 15px;
+  background: url("./media/background.svg") center / cover no-repeat;
+}
+
+/* Under this it is a strip rather than a panel: the wizard's column takes
+   650px of the width, so this is where the art stops being 200px wide —
+   below it it goes entirely and the page is the wizard again. */
+@media (max-width: 850px) {
+  .setup-art {
+    display: none;
+  }
+}
+
+/* Centred over the whole of the wizard's column, steps and panel alike:
+   it names the page, not what is being answered on it. */
+.setup-title {
+  flex-shrink: 0;
+  padding-bottom: 80px;
+
+  font-family: "KBRD Kedebideri", var(--mantine-font-family);
+  font-size: 45px;
+  line-height: 1;
+  text-align: center;
+  color: #ffffff;
+}
+
+/* The steps across the top, the step being answered under them. Mantine
+   lays a horizontal `Tabs` out as a block; a column of flex boxes is what
+   hands the panel the height the strip leaves, so the step's own body is
+   what gives way when a window is short (see `.setup-body`). */
+.setup-tabs {
+  flex: 1;
+  min-height: 0;
+  /* The whole of what the shell gives it — the shell is what holds the
+     wizard to a readable width (see its own `flex-basis`), and a second
+     cap here would only take half of that again. */
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+/* The strip: the four steps as one grey group. Its own height, not a
+   share of the column — everything left over is the panel's.
+
+   No line anywhere in it — not around the group, not under it (see the
+   `::before` below), and not around a tab (`--tab-border-width`, which
+   the outline variant would otherwise draw the active one with). The
+   ground is what separates it from the page, and the step being answered
+   is a lighter shade of it. The group clips, so that shade stops at the
+   corners rather than crossing them. */
+.setup-steps {
+  /* The group's own corners, and the two tabs that have to match them
+     (see below) — one value, so they can't drift apart. */
+  --setup-steps-radius: 10px;
+  --tab-border-width: 0;
+
+  flex: none;
+  background-color: var(--kbrd-color-sunken);
+  border-radius: var(--setup-steps-radius);
+  overflow: hidden;
+
+  /* Read-only: the wizard is walked with Back and Next, and the steps
+     are there to say where in it you are. Nothing about them takes a
+     click — including the cursor and the hover, which would promise
+     one. */
+  pointer-events: none;
+}
+
+/* Mantine draws the outline variant's rule as a border on the list's own
+   `::before`, hard-coded rather than read off a variable — so this is
+   what takes it off. Ours lands after `@mantine/core/styles.css` (see
+   `main.tsx`), which is what settles it between two rules of the same
+   weight. */
+.setup-steps::before {
+  border: none;
+}
+
+/* And the 1px marks the variant paints at the active tab's corners to
+   join it to that rule: there is no rule left for them to join. */
+.setup-steps .mantine-Tabs-tab::before,
+.setup-steps .mantine-Tabs-tab::after {
+  content: none;
+}
+
+/* Square where the tabs meet each other, rounded only where they meet
+   the frame: Mantine rounds every tab's own top corners, which inside one
+   group reads as four boxes rather than as one strip. */
+.setup-steps .mantine-Tabs-tab {
+  border-radius: 0;
+}
+
+.setup-steps .mantine-Tabs-tab:first-child {
+  border-start-start-radius: var(--setup-steps-radius);
+  border-end-start-radius: var(--setup-steps-radius);
+}
+
+.setup-steps .mantine-Tabs-tab:last-child {
+  border-start-end-radius: var(--setup-steps-radius);
+  border-end-end-radius: var(--setup-steps-radius);
+}
+
+/* The step being answered, picked out of the grey strip rather than
+   shaded up from it: white, and the text that reads on white. Both stated
+   outright — the point is the contrast against the group's own ground,
+   which is the same grey under either theme. */
+.setup-steps .mantine-Tabs-tab[data-active] {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+.setup-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding-top: var(--setup-panel-padding);
+  display: flex;
+  flex-direction: column;
+}
+
+.setup-content .mantine-InputWrapper-label {
+  display: flex;
+  align-items: center;
+  height: var(--setup-label-height);
+  margin-bottom: var(--setup-label-gap);
+}
+
+.setup-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.setup-actions {
+  flex-shrink: 0;
+  padding-top: 24px;
+}
+
+/* The page goes back to growing and scrolling as one rather than holding
+   itself to the window: a phone has no height to spare for a step's body
+   to scroll inside. 50px a side is most of a phone's width, so the
+   padding comes in with it. */
+@media (max-width: 760px) {
+  .setup-page {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
+  .setup-shell {
+    padding: 24px;
+  }
+
+  .setup-body {
+    overflow: visible;
+  }
+}
+
+/* A step in two columns: what is being chosen on the left, what that
+   choice asks for on the right. Equal halves — the Wi-Fi step's list
+   wants the room, and the addressing step's fields fill the other side
+   only once Static is picked. */
+.setup-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+  align-items: start;
+
+  /* Every control in the wizard cut with the same radius as the network
+     list's own frame (see `.wifi-list`), rather than each field being
+     told separately. */
+  --input-radius: var(--mantine-radius-sm);
+}
+
+/* The row on the left is the box; on the right it is the label itself.
+   Scoped to the password field rather than to every label in the step —
+   the SSID heading *is* an `Input.Label`, and a rule on both would give
+   it this height a second time inside a row already holding it, which
+   is what lifted it off centre. */
+/* The Wi-Fi step's SSID heading shares its row with the scan button, so
+   here the row is the box rather than the label. */
+.wifi-label {
+  display: flex;
+  align-items: center;
+  height: var(--setup-label-height);
+  margin-bottom: var(--setup-label-gap);
+}
+
+/* The heading inside that row is an `Input.Label` like any other, and
+   the row around it already holds the height and the gap — left to the
+   rule above it would take them a second time and sit off centre. */
+.wifi-label .mantine-InputWrapper-label {
+  height: auto;
+  margin-bottom: 0;
+}
+
+/* Fields stacked into one frame: the edges where two meet go entirely
+   and the corners that meet are squared, so the group reads as a single
+   control rather than as a column of separate ones.
+
+   `!important` because the app's own `.mantine-Input-input` rule above is
+   `!important` too: an important declaration beats a normal one however
+   specific the normal one is, so without this the edges come straight
+   back. Between two important declarations specificity decides again, and
+   these selectors are the more specific. */
+.setup-joined > *:not(:first-child) input {
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+  border-top: none !important;
+}
+
+.setup-joined > *:not(:last-child) input {
+  border-bottom-left-radius: 0 !important;
+  border-bottom-right-radius: 0 !important;
+  border-bottom: none !important;
+}
+
+/* The frame around a list of rows, shared by the two steps that offer
+   one to pick from: the networks in range (see `setup/WifiPicker`) and
+   the panels KBRD knows (see `setup/ScreenPicker`). Neither list brings
+   a border of its own — the Wi-Fi one is a Combobox rendered inline
+   rather than in a dropdown, and the screen one is rows — so the frame
+   is here, around whichever it holds. */
+.setup-list {
+  /* One row, and the unit a list's own height is counted in. */
+  --setup-row-height: 38px;
+
+  border: 1px solid var(--kbrd-border-color);
+  border-radius: var(--mantine-radius-sm);
+  overflow: hidden;
+}
+
+/* Eight rows exactly, whatever is in them: the frame holds still as a
+   scan comes back, and as a brand is folded and unfolded. */
+.setup-scroll {
+  height: calc(var(--setup-row-height) * 8);
+}
+
+/* The row under a list, in the same frame and on the same rhythm as the
+   rows above it — the same question, answered by hand: a hidden network
+   on one step, a screen that isn't listed on the next. */
+.setup-other {
+  border-top: 1px solid var(--kbrd-border-color);
+  min-height: var(--setup-row-height);
+  padding: 0 10px;
+}
+
+/* Flush to the frame: Mantine insets its options so they can round off
+   inside a dropdown, and there is no dropdown here — the inset would
+   only stop the rows from adding up to a whole number of them. */
+.wifi-list .mantine-Combobox-options {
+  padding: 0;
+}
+
+.wifi-list .mantine-Combobox-option {
+  display: flex;
+  align-items: center;
+  min-height: var(--setup-row-height);
+  border-radius: 0;
+}
+
+/* A row of the panel menu: a brand, or one of its models. Same height
+   and same gap as the network list's options opposite — the two frames
+   are one step apart in the wizard and are read as the same thing. */
+.screen-row {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  width: 100%;
+  min-height: var(--setup-row-height);
+  padding: 0 10px;
+  text-align: left;
+}
+
+.screen-row:hover {
+  background: var(--kbrd-color-hover);
+}
+
+/* The models are indented past their brand's caret, so the level a row
+   is on is legible without following the fold. */
+.screen-model {
+  padding-left: 28px;
+}
+
+/* The one picked. A ground rather than the selection green: the radio in
+   the row already says which it is, and a whole row of green next to the
+   Wi-Fi step's own list would not read as the same control. */
+.screen-model[data-selected] {
+  background: var(--kbrd-color-active);
+}
+
+/* A read-only answer under a label of its own — the screen step's facts,
+   and every line of the last step's summary: 5px tighter to the label
+   than a field is, since there is no input box here whose own frame stood
+   the text off it. The label keeps its full height, so the first of these
+   still starts level with whatever is opposite. */
+.setup-fact {
+  margin-top: -5px;
+}
+
+/* Points at the brand it heads, and turns down over the models when they
+   are out. */
+.screen-caret {
+  flex-shrink: 0;
+  transition: transform 150ms ease;
+}
+
+.screen-caret[data-open] {
+  transform: rotate(90deg);
+}
+
+.wifi-scan[data-busy] svg {
+  animation: kbrd-spin 800ms linear infinite;
+}
+
+@keyframes kbrd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (max-width: 760px) {
+  .setup-columns {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+}
