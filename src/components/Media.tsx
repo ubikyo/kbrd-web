@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type DragEvent } from "react";
 import {
   ActionIcon,
   Box,
+  EmptyState,
   Group,
   Progress,
   ScrollArea,
@@ -10,7 +11,13 @@ import {
   Text,
   UnstyledButton,
 } from "@mantine/core";
-import { MdAdd, MdDelete, MdFileUpload } from "react-icons/md";
+import {
+  MdAdd,
+  MdDelete,
+  MdImage,
+  MdPermMedia,
+  MdVideocam,
+} from "react-icons/md";
 // The column switch alone comes from Tabler: its `columns-1`/`columns-2`
 // draw the layout they stand for — one pane, then two — where Material
 // has no matching pair (see `ColumnPicker`).
@@ -190,6 +197,35 @@ function MediaTile({
   );
 }
 
+/** What the panel says of a file it can't take, wherever it was dropped. */
+const WRONG_KIND =
+  "Images must be PNG or JPEG; videos MP4, M4V, MOV, MKV, WEBM or AVI.";
+
+/** How the size limit reads with the offending file's name in front. */
+const overLimit = (name: string) =>
+  `${name}: over the ${Math.round(MAX_MEDIA_BYTES / (1024 * 1024))} MB limit.`;
+
+/**
+ * Why a file dropped on `media`'s square can't replace what it holds, or
+ * `null` if it can — the same three things the device would turn it away
+ * for, checked here so a file that has no business replacing this media
+ * is refused outright rather than through a confirmation asking whether
+ * to go ahead with it.
+ */
+function replaceRefusal(media: LibraryMedia, file: File): string | null {
+  if (file.size > MAX_MEDIA_BYTES) return overLimit(file.name);
+  const kind = mediaKindOf(file);
+  if (kind === null) return WRONG_KIND;
+  // A square stays in the tab it is being shown under, which is also what
+  // KBRD-API holds a replacement to.
+  if (kind !== media.kind) {
+    return media.kind === "photo"
+      ? "A photo can only be replaced by another photo."
+      : "A video can only be replaced by another video.";
+  }
+  return null;
+}
+
 /** What a file has to be to be worth opening the picker on — the same
  * extensions `mediaKindOf` checks a dropped file against, so both ways
  * into the library offer the same files. */
@@ -250,6 +286,10 @@ function MediaAddTile({ onFiles }: { onFiles: (files: File[]) => void }) {
  * sides. What adds more is the band at the foot of the panel, outside
  * this.
  *
+ * With nothing to list — the library has medias, but none of this kind
+ * under the category on show — the tab says so and takes the drop itself,
+ * the add band being held back for a tab that has something in it.
+ *
  * Whatever the last attempt to add, replace or delete one had to say goes
  * above the list rather than under it — a library of any size scrolls,
  * and a message below it would be off-screen exactly when it matters —
@@ -259,17 +299,26 @@ function MediaAddTile({ onFiles }: { onFiles: (files: File[]) => void }) {
  */
 function MediaList({
   medias,
+  kind,
   columns,
+  onAdd,
   onReplace,
   onDelete,
   error,
 }: {
   medias: LibraryMedia[];
+  kind: MediaKind;
   columns: MediaColumns;
+  onAdd: (files: File[]) => void;
   onReplace: (media: LibraryMedia, file: File) => void;
   onDelete: (media: LibraryMedia) => void;
   error: string | null;
 }) {
+  const photo = kind === "photo";
+  // Only ever the empty state's, below: a list that has squares in it has
+  // the add band under it, and each square is its own target.
+  const dropTarget = useDropTarget(onAdd);
+
   return (
     <>
       {error && (
@@ -277,23 +326,43 @@ function MediaList({
           {error}
         </Text>
       )}
-      <Stack className="media-list" data-columns={columns} gap={0}>
-        {medias.map((media) => (
-          <MediaTile
-            key={media.key}
-            media={media}
-            onReplace={(file) => onReplace(media, file)}
-            onDelete={() => onDelete(media)}
+      {medias.length === 0 ? (
+        // The library has something in it, just nothing of this kind under
+        // this category — so the whole panel's drop zone isn't showing and
+        // this tab has to be one itself. The band that adds medias isn't
+        // there either (it only ever stands under a list there is
+        // something in), which leaves this the way to add the first one.
+        <Box className="media-dropzone" {...dropTarget}>
+          <EmptyState
+            className="media-empty"
+            icon={photo ? <MdImage size={28} /> : <MdVideocam size={28} />}
+            title={photo ? "No image here" : "No video here"}
+            description={
+              photo
+                ? "Drop an image here to add it to this category"
+                : "Drop a video here to add it to this category"
+            }
           />
-        ))}
-        {/* A row the medias leave half empty still belongs to the grid:
-            the cell is drawn even though nothing is in it, so the rules
-            around it — the one above the row, the one down the middle —
-            run the width of the list like every other. */}
-        {columns === 2 && medias.length % 2 === 1 && (
-          <Box className="media-tile" aria-hidden />
-        )}
-      </Stack>
+        </Box>
+      ) : (
+        <Stack className="media-list" data-columns={columns} gap={0}>
+          {medias.map((media) => (
+            <MediaTile
+              key={media.key}
+              media={media}
+              onReplace={(file) => onReplace(media, file)}
+              onDelete={() => onDelete(media)}
+            />
+          ))}
+          {/* A row the medias leave half empty still belongs to the grid:
+              the cell is drawn even though nothing is in it, so the rules
+              around it — the one above the row, the one down the middle —
+              run the width of the list like every other. */}
+          {columns === 2 && medias.length % 2 === 1 && (
+            <Box className="media-tile" aria-hidden />
+          )}
+        </Stack>
+      )}
     </>
   );
 }
@@ -388,6 +457,12 @@ export default function Media({
   // Which media the delete button was pressed on, and so what the
   // confirmation below is asking about.
   const [deletingMedia, setDeletingMedia] = useState<LibraryMedia | null>(null);
+  // The media a file was dropped on and the file itself, held while the
+  // confirmation asks whether to overwrite the one with the other.
+  const [replacing, setReplacing] = useState<{
+    media: LibraryMedia;
+    file: File;
+  } | null>(null);
 
   const activeCategory =
     categories.find((item) => item.id === activeCategoryId) ?? null;
@@ -463,11 +538,7 @@ export default function Media({
     // front of it, which never even reaches KBRD-API.
     const tooBig = files.filter((file) => file.size > MAX_MEDIA_BYTES);
     if (tooBig.length > 0) {
-      setDropError(
-        `${tooBig.map((file) => file.name).join(", ")}: over the ${Math.round(
-          MAX_MEDIA_BYTES / (1024 * 1024),
-        )} MB limit.`,
-      );
+      setDropError(overLimit(tooBig.map((file) => file.name).join(", ")));
       return;
     }
     const accepted = files.flatMap((file) => {
@@ -475,9 +546,7 @@ export default function Media({
       return kind ? [{ file, kind }] : [];
     });
     if (accepted.length === 0) {
-      setDropError(
-        "Images must be PNG or JPEG; videos MP4, M4V, MOV, MKV, WEBM or AVI.",
-      );
+      setDropError(WRONG_KIND);
       return;
     }
     // A media is filed under a category, so there has to be one. KBRD-API
@@ -527,39 +596,35 @@ export default function Media({
 
   /**
    * Puts a new file behind a media that is already there — what dropping
-   * one onto another's square does. The square shows the new file going
-   * out exactly as a fresh one does, and is back to the media it was
-   * showing if it doesn't make it.
+   * one onto another's square does, once `askReplace` below has had that
+   * confirmed. The square shows the new file going out exactly as a fresh
+   * one does, and is back to the media it was showing if it doesn't make
+   * it.
    */
-  async function replaceFile(media: LibraryMedia, file: File) {
-    const previous = media.filename;
+  /**
+   * Asks before replacing: a file dropped on a square is only taken once
+   * the dialog below has been said yes to, the square's own media being
+   * overwritten on the device rather than merely added to. A file that
+   * couldn't replace this media anyway never gets that far — it's refused
+   * here, with the reason above the list.
+   */
+  function askReplace(media: LibraryMedia, file: File) {
     // Nothing to replace until the media it holds is actually there.
+    if (media.filename === null) return;
+    const refusal = replaceRefusal(media, file);
+    if (refusal !== null) {
+      setDropError(refusal);
+      return;
+    }
+    setDropError(null);
+    setReplacing({ media, file });
+  }
+
+  /** Confirmed from the dialog below, never straight off the drop. */
+  async function replaceFile(media: LibraryMedia, file: File) {
+    setReplacing(null);
+    const previous = media.filename;
     if (previous === null) return;
-    if (file.size > MAX_MEDIA_BYTES) {
-      setDropError(
-        `${file.name}: over the ${Math.round(
-          MAX_MEDIA_BYTES / (1024 * 1024),
-        )} MB limit.`,
-      );
-      return;
-    }
-    const kind = mediaKindOf(file);
-    if (kind === null) {
-      setDropError(
-        "Images must be PNG or JPEG; videos MP4, M4V, MOV, MKV, WEBM or AVI.",
-      );
-      return;
-    }
-    // A square stays in the tab it is being shown under, which is also
-    // what KBRD-API holds a replacement to.
-    if (kind !== media.kind) {
-      setDropError(
-        media.kind === "photo"
-          ? "A photo can only be replaced by another photo."
-          : "A video can only be replaced by another video.",
-      );
-      return;
-    }
     setDropError(null);
     patchMedia(media.key, { progress: 0, filename: null });
     try {
@@ -647,39 +712,58 @@ export default function Media({
         }}
       >
         {/* The category applies to both tabs, so it sits above the strip
-            rather than inside either panel. */}
-        <Group justify="space-between" px={15} pt={15} pb={15}>
-          <ColumnPicker columns={columns} onChange={onColumnsChange} />
-          <Category
-            categories={categories}
-            activeCategory={activeCategory}
-            onSelect={(category) => setActiveCategoryId(category.id)}
-            onAdd={() => {
-              setEditorError(null);
-              setEditorMode("add");
-            }}
-            onEdit={() => {
-              setEditorError(null);
-              setEditorMode("edit");
-            }}
-            onDelete={() => setConfirmDelete(true)}
-          />
-        </Group>
+            rather than inside either panel — and goes with them while the
+            library is empty: there is nothing to file under a category,
+            and nothing to lay out in one column or two, until something
+            has been dropped in. */}
+        {medias.length > 0 && (
+          <Group justify="space-between" px={15} pt={15} pb={15}>
+            <ColumnPicker columns={columns} onChange={onColumnsChange} />
+            <Category
+              categories={categories}
+              activeCategory={activeCategory}
+              onSelect={(category) => setActiveCategoryId(category.id)}
+              onAdd={() => {
+                setEditorError(null);
+                setEditorMode("add");
+              }}
+              onEdit={() => {
+                setEditorError(null);
+                setEditorMode("edit");
+              }}
+              onDelete={() => setConfirmDelete(true)}
+            />
+          </Group>
+        )}
 
         {medias.length === 0 ? (
           // Nothing in the library yet: the tabs would have nothing to
-          // show either way, so the drop zone takes the whole panel from
-          // under the category down to the bottom of the window.
+          // show either way, so the drop zone takes the whole panel, top
+          // to bottom.
           <Box className="media-dropzone" data-empty {...dropTarget}>
-            <MdFileUpload size={28} />
-            <Text size="sm" c="dimmed" ta="center">
-              Drop an image or a video here to add it to the medias
-            </Text>
-            {dropError && (
-              <Text size="xs" c="red" ta="center">
-                {dropError}
-              </Text>
-            )}
+            {/* The frame keeps its own size and place — it's the drop
+                target — while the message it holds is placed like every
+                other empty state in the app, on the window's own middle
+                (see `.media-panel-empty` in App.css). The error a refused
+                drop leaves rides along with it, directly under it. */}
+            <Stack className="media-panel-empty" align="center" gap={10}>
+              <EmptyState
+                icon={<MdPermMedia size={28} />}
+                title="No medias yet"
+                description={
+                  <>
+                    Drop an image or
+                    <br />
+                    a video to upload it
+                  </>
+                }
+              />
+              {dropError && (
+                <Text size="xs" c="red" ta="center">
+                  {dropError}
+                </Text>
+              )}
+            </Stack>
           </Box>
         ) : (
           <Tabs
@@ -698,8 +782,10 @@ export default function Media({
             <Tabs.Panel value="photo">
               <MediaList
                 medias={shown("photo")}
+                kind="photo"
                 columns={columns}
-                onReplace={(media, file) => void replaceFile(media, file)}
+                onAdd={(files) => void addFiles(files)}
+                onReplace={askReplace}
                 onDelete={setDeletingMedia}
                 error={dropError}
               />
@@ -708,8 +794,10 @@ export default function Media({
             <Tabs.Panel value="video">
               <MediaList
                 medias={shown("video")}
+                kind="video"
                 columns={columns}
-                onReplace={(media, file) => void replaceFile(media, file)}
+                onAdd={(files) => void addFiles(files)}
+                onReplace={askReplace}
                 onDelete={setDeletingMedia}
                 error={dropError}
               />
@@ -717,10 +805,12 @@ export default function Media({
           </Tabs>
         )}
 
-        {/* Along the foot of the panel whichever tab is showing — and
-            only once there is a library at all: an empty one is the drop
-            zone above, which is already asking for the same thing. */}
-        {medias.length > 0 && (
+        {/* Under the tab on show, and only once that tab has a square of
+            its own to stand under: a tab with nothing in it is a drop zone
+            already asking for the same thing (see `MediaList`), as is an
+            empty library, and a second invitation under either would only
+            say it twice. */}
+        {shown(tab).length > 0 && (
           <MediaAddTile onFiles={(files) => void addFiles(files)} />
         )}
 
@@ -735,6 +825,27 @@ export default function Media({
             }}
             onNameChange={() => setEditorError(null)}
             onSubmit={(name) => void submitCategory(name)}
+          />
+        )}
+
+        {replacing && (
+          <Confirmation
+            title="Replace media"
+            message={
+              <>
+                Replace{" "}
+                <Text component="span" fw={600}>
+                  {replacing.media.name}
+                </Text>{" "}
+                with{" "}
+                <Text component="span" fw={600}>
+                  {replacing.file.name}
+                </Text>
+                ?
+              </>
+            }
+            onConfirm={() => void replaceFile(replacing.media, replacing.file)}
+            onCancel={() => setReplacing(null)}
           />
         )}
 

@@ -2,9 +2,11 @@ import { useEffect, useState } from "react";
 import {
   Box,
   Button,
+  FileButton,
   Group,
   Modal,
   NumberInput,
+  Progress,
   Select,
   Stack,
   Switch,
@@ -13,7 +15,16 @@ import {
   Title,
   useMantineColorScheme,
 } from "@mantine/core";
-import { MdCode, MdPalette, MdStraighten, MdTune } from "react-icons/md";
+import {
+  MdCode,
+  MdDownload,
+  MdPalette,
+  MdSdStorage,
+  MdStorage,
+  MdStraighten,
+  MdTune,
+  MdUpload,
+} from "react-icons/md";
 
 import {
   FALLBACK_HEIGHT,
@@ -21,7 +32,10 @@ import {
   getDevice,
   type DeviceStatus,
 } from "../../api/device";
+import { BACKUP_DOWNLOAD_URL, restoreBackup } from "../../api/backup";
+import { getStorage, type StoragePartition } from "../../api/storage";
 import type { LayoutSettings } from "../../types/layout";
+import Confirmation from "./Confirmation";
 import type {
   ColorSchemePreference,
   PanelState,
@@ -30,6 +44,12 @@ import type {
 
 const DEVICE_POLL_INTERVAL_MS = 5000;
 const MM_PER_INCH = 25.4;
+
+// A partition is worth a second look before it is actually full: at 75%
+// the bar goes amber, at 90% red. `/data` is the one that moves — it is
+// where media, fonts and the database all land.
+const STORAGE_WARN_PERCENT = 75;
+const STORAGE_FULL_PERCENT = 90;
 
 /** The Appearance tab's own three answers. "System" is Mantine's own
  * `auto` — the value follows the OS rather than naming a palette, which
@@ -95,6 +115,58 @@ function PanelRow({
   );
 }
 
+/** Binary units under decimal names, which is what the Media panel's own
+ * "200 MB" limit means too — the two numbers are read against each other,
+ * so they are counted the same way. */
+function formatBytes(bytes: number) {
+  const units = ["B", "kB", "MB", "GB", "TB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  // Whole bytes and kilobytes have no decimal worth showing; a size in MB
+  // or above does, and one digit is enough to see a partition move.
+  const digits = unit < 2 ? 0 : 1;
+  return `${value.toFixed(digits)} ${units[unit]}`;
+}
+
+/** One partition's own bar, over what it holds and what is left. */
+function PartitionRow({ partition }: { partition: StoragePartition }) {
+  const percent = (partition.used / partition.total) * 100;
+  const color =
+    percent >= STORAGE_FULL_PERCENT
+      ? "red"
+      : percent >= STORAGE_WARN_PERCENT
+        ? "yellow"
+        : "green";
+  return (
+    <Stack gap={4}>
+      <Group justify="space-between" gap="xs" wrap="nowrap">
+        <Text size="sm">
+          {partition.name}{" "}
+          <Text span size="xs" c="dimmed">
+            {partition.mount}
+          </Text>
+        </Text>
+        <Text size="sm" fw={700} c={color}>
+          {Math.round(percent)}%
+        </Text>
+      </Group>
+      <Progress
+        value={percent}
+        color={color}
+        aria-label={`${partition.name} usage`}
+      />
+      <Text size="xs" c="dimmed">
+        {formatBytes(partition.used)} used of {formatBytes(partition.total)} —{" "}
+        {formatBytes(partition.free)} free
+      </Text>
+    </Stack>
+  );
+}
+
 function DisplayRow({ label, value }: { label: string; value: string }) {
   return (
     <FieldRow label={label}>
@@ -151,6 +223,20 @@ export default function Settings({
   const [inspectorPanelDraft, setInspectorPanelDraft] =
     useState<PanelState>(inspectorPanel);
   const [device, setDevice] = useState<DeviceStatus>({ connected: false });
+  // The Storage tab, polled on the same interval as the device: it is a
+  // reading of the filesystems as they are, not a setting, so there is
+  // nothing here for Save or Cancel to do.
+  const [partitions, setPartitions] = useState<StoragePartition[] | null>(null);
+
+  // The Backup tab. Nothing here is drafted the way the fields above are:
+  // a download is a download, and a restore replaces the database the
+  // moment it is confirmed — neither has anything for Save to apply, and
+  // Cancel can't put a restored database back. `restoreFile` is only the
+  // file picked so far; it isn't sent until the confirmation says so.
+  const [restoreFile, setRestoreFile] = useState<File | null>(null);
+  const [confirmingRestore, setConfirmingRestore] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [restoreError, setRestoreError] = useState<string | null>(null);
 
   // The Appearance tab. Unlike every other control in this modal, the
   // colour scheme is *not* drafted: a theme that only arrived on Save
@@ -177,7 +263,31 @@ export default function Settings({
       setMediaPanelDraft(mediaPanel);
       setInspectorPanelDraft(inspectorPanel);
       setColorSchemeAtOpen(colorScheme);
+      setRestoreFile(null);
+      setConfirmingRestore(false);
+      setRestoreError(null);
     }
+  }
+
+  async function restore() {
+    if (!restoreFile) return;
+    setConfirmingRestore(false);
+    setRestoring(true);
+    setRestoreError(null);
+    try {
+      await restoreBackup(restoreFile);
+    } catch (error) {
+      setRestoring(false);
+      setRestoreError(
+        error instanceof Error ? error.message : "The restore failed",
+      );
+      return;
+    }
+    // Every layout, layer and key on screen came from the database that
+    // has just been replaced, and the panels hold their own copies of it
+    // — reloading is what puts the app back in step with what is now
+    // there, and it is quicker than re-fetching each of them by hand.
+    window.location.reload();
   }
 
   useEffect(() => {
@@ -189,6 +299,14 @@ export default function Settings({
           if (!cancelled) setDevice(status);
         },
         () => {},
+      );
+      getStorage().then(
+        (status) => {
+          if (!cancelled) setPartitions(status.partitions);
+        },
+        () => {
+          if (!cancelled) setPartitions([]);
+        },
       );
     }
     poll();
@@ -296,6 +414,12 @@ export default function Settings({
             <Tabs.Tab value="display" leftSection={<MdStraighten size={16} />}>
               Display
             </Tabs.Tab>
+            <Tabs.Tab value="storage" leftSection={<MdSdStorage size={16} />}>
+              Storage
+            </Tabs.Tab>
+            <Tabs.Tab value="backup" leftSection={<MdStorage size={16} />}>
+              Backup
+            </Tabs.Tab>
             <Tabs.Tab value="developer" leftSection={<MdCode size={16} />}>
               Developer
             </Tabs.Tab>
@@ -314,11 +438,11 @@ export default function Settings({
                   allowDeselect={false}
                   data={[
                     { value: "layout", label: "Layout" },
-                    { value: "mapping", label: "Mapping" },
+                    { value: "layer", label: "Layer" },
                   ]}
                   value={startupModeDraft}
                   onChange={(value) => {
-                    if (value === "layout" || value === "mapping")
+                    if (value === "layout" || value === "layer")
                       setStartupModeDraft(value);
                   }}
                 />
@@ -419,6 +543,112 @@ export default function Settings({
           </Tabs.Panel>
 
           <Tabs.Panel
+            value="storage"
+            style={{ overflowY: "auto", padding: 0, paddingLeft: 40 }}
+          >
+            <Stack gap="md">
+              <Title order={4}>Partitions</Title>
+              <Text size="xs" c="dimmed">
+                The card's own filesystems, read afresh every few seconds.
+                Data is the one that moves: the media library, the fonts
+                and the database all live on it.
+              </Text>
+              {partitions === null ? (
+                <Text size="sm" c="dimmed">
+                  Reading…
+                </Text>
+              ) : partitions.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  No filesystem reported.
+                </Text>
+              ) : (
+                <Stack gap="lg">
+                  {partitions.map((partition) => (
+                    <PartitionRow key={partition.mount} partition={partition} />
+                  ))}
+                </Stack>
+              )}
+            </Stack>
+          </Tabs.Panel>
+
+          <Tabs.Panel
+            value="backup"
+            style={{ overflowY: "auto", padding: 0, paddingLeft: 40 }}
+          >
+            <Stack gap="md">
+              <Title order={4}>Backup</Title>
+              <Text size="xs" c="dimmed">
+                Saves the whole device as one archive: the database —
+                every layout, layer, key and plugin setting — and the media
+                library's own images and videos.
+              </Text>
+              <Group>
+                <Button
+                  component="a"
+                  href={BACKUP_DOWNLOAD_URL}
+                  download
+                  color="gray"
+                  leftSection={<MdDownload size={16} />}
+                >
+                  Download backup
+                </Button>
+              </Group>
+
+              <Title order={4} mt="md">
+                Restore
+              </Title>
+              <Text size="xs" c="dimmed">
+                Puts a backup back, replacing everything on the device —
+                layouts and medias alike — with what that archive holds.
+                Anything done since it was taken is lost, and there is no
+                undo: download a backup of what is here first if you want
+                to be able to come back to it.
+              </Text>
+              <Group gap="sm">
+                {/* Neither of these goes through Save: a restore takes
+                    effect when it is confirmed, not when the modal is
+                    closed (see `restore`). */}
+                <FileButton
+                  onChange={(file) => {
+                    setRestoreFile(file);
+                    setRestoreError(null);
+                  }}
+                  accept=".zip,application/zip"
+                >
+                  {(props) => (
+                    <Button
+                      {...props}
+                      color="gray"
+                      leftSection={<MdUpload size={16} />}
+                      disabled={restoring}
+                    >
+                      Choose a backup
+                    </Button>
+                  )}
+                </FileButton>
+                <Button
+                  color="red"
+                  disabled={!restoreFile || restoring}
+                  loading={restoring}
+                  onClick={() => setConfirmingRestore(true)}
+                >
+                  Restore
+                </Button>
+              </Group>
+              {restoreFile && (
+                <Text size="xs" c="dimmed">
+                  {restoreFile.name}
+                </Text>
+              )}
+              {restoreError && (
+                <Text size="xs" c="red">
+                  {restoreError}
+                </Text>
+              )}
+            </Stack>
+          </Tabs.Panel>
+
+          <Tabs.Panel
             value="developer"
             style={{ overflowY: "auto", padding: 0, paddingLeft: 40 }}
           >
@@ -427,6 +657,7 @@ export default function Settings({
               <FieldRow label="Enable debug">
                 <Switch
                   aria-label="Enable debug"
+                  color="green"
                   checked={debugDraft}
                   onChange={(event) =>
                     setDebugDraft(event.currentTarget.checked)
@@ -451,6 +682,21 @@ export default function Settings({
           Save
         </Button>
       </Group>
+
+      {confirmingRestore && restoreFile && (
+        <Confirmation
+          title="Restore this backup?"
+          message={
+            <>
+              Everything on this device will be replaced with what{" "}
+              <b>{restoreFile.name}</b> holds, and the app will reload.
+              This cannot be undone.
+            </>
+          }
+          onConfirm={() => void restore()}
+          onCancel={() => setConfirmingRestore(false)}
+        />
+      )}
     </Modal>
   );
 }

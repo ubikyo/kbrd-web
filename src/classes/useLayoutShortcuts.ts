@@ -14,8 +14,8 @@ import { useEffect, useRef, useState } from "react";
  * Backspace/Copy/Paste fire in either mode — this hook has no `mode` of
  * its own to gate on. `Composer` (the only caller) passes whichever
  * implementation matches the mode it's currently in: `useDisplayGrid`'s
- * own geometry operations in Layout, its own Mapping-content operations
- * (working off `keyRef`/`layer.plugins` instead) in Mapping — this hook
+ * own geometry operations in Layout, its own Layer-content operations
+ * (working off `keyRef`/`layer.plugins` instead) in Layer — this hook
  * stays ignorant of which is which.
  *
  * The keydown handler itself is read through a ref (`shortcutsRef`)
@@ -25,9 +25,9 @@ import { useEffect, useRef, useState } from "react";
  */
 export function useLayoutShortcuts(params: {
   // Only gates the Tab/Resize shortcut below — Resize is a Layout-only
-  // concept, so Tab does nothing while in Mapping mode. Every other
+  // concept, so Tab does nothing while in Layer mode. Every other
   // shortcut in this hook stays mode-agnostic, per the class doc above.
-  mode: "layout" | "mapping";
+  mode: "layout" | "layer";
   settingsOpened: boolean;
   layoutEditorOpened: boolean;
   layerEditorOpened: boolean;
@@ -78,7 +78,7 @@ export function useLayoutShortcuts(params: {
   // Option/Alt+Tab toggles Resize — a global shortcut, independent of
   // mode/selection — except while a modal has its own fields to tab
   // through normally, or while typing in a text field, where Tab must
-  // keep doing its normal job. Plain Tab is Composer's own Layout/Mapping
+  // keep doing its normal job. Plain Tab is Composer's own Layout/Layer
   // toggle instead (see there) and must not also flip Resize. Not
   // Cmd/Ctrl+Tab: the OS (macOS's own app switcher, at least) intercepts
   // that before it ever reaches the browser, so the shortcut was

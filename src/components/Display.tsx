@@ -11,7 +11,7 @@ import { useKeyDrag } from "../classes/useKeyDrag";
 import type { KeyDragTarget } from "../classes/useKeyDrag";
 import { useDevicePolling } from "../classes/useDevicePolling";
 import { useElementSize } from "../classes/useElementSize";
-import { isMappingTarget, isMappingVisible, pluginById } from "../plugins/registry";
+import { isLayerTarget, isLayerVisible, pluginById } from "../plugins/registry";
 import type { KeyPlugin, LayerData } from "../types/layer";
 import {
   defaultGridCell,
@@ -30,6 +30,7 @@ import {
   pitchMm,
   primaryOf,
   remainingUnitsInRow,
+  unitsAcross,
   type CellRect,
 } from "../utils/layout";
 import { randomId } from "../utils/id";
@@ -88,7 +89,7 @@ export type ContextMenuTarget =
   | { kind: "display" };
 
 type Props = LayoutSettings & {
-  mode: "layout" | "mapping";
+  mode: "layout" | "layer";
   // The display's full grid — see `gridRows`. A row starts with no cells at
   // all; `App` owns the actual list.
   rows: number[][];
@@ -98,8 +99,8 @@ type Props = LayoutSettings & {
   ) => void;
   // The current layer, and how to save a freshly-created `KeyPlugin` back
   // onto it — `null`/omitted-effect while there's no layer yet (nothing to
-  // attach to, same as `isMappingTarget` already gating an untyped cell).
-  // Only Mapping mode's own drop handling (`handleCellDrop`/
+  // attach to, same as `isLayerTarget` already gating an untyped cell).
+  // Only Layer mode's own drop handling (`handleCellDrop`/
   // `handleDivisionDrop`) actually reads either of these.
   layer: LayerData | null;
   onChangePlugins: (plugins: KeyPlugin[]) => void;
@@ -127,9 +128,9 @@ type Props = LayoutSettings & {
   // there — see `handleCellDragOver`'s own insertion-point math and
   // `onMoveCell`'s Unit-budget check.
   onMoveCell: (id: number, targetRow: number, beforeId: number | null) => void;
-  // Dragging a Key cell with Mapping content onto another Key cell moves
+  // Dragging a Key cell with Layer content onto another Key cell moves
   // all of it there (in place of the old "Move to" menu item) — see
-  // `useKeyDrag`. Only wired up (and only ever called) in Mapping mode.
+  // `useKeyDrag`. Only wired up (and only ever called) in Layer mode.
   onMoveKey: (sourceKeyRef: string, destKeyRef: string) => void;
   mergeGroups: MergeGroups;
   // Every currently-selected top-level cell's own primary id — plain
@@ -170,7 +171,7 @@ type Props = LayoutSettings & {
   // coordinates to open `App`'s context menu at, and what was actually
   // under the cursor (already selected the same way its left-click
   // equivalent would be, by the time this fires — see `handleClick` and
-  // friends). Layout-only for a cell/division/row: in Mapping mode
+  // friends). Layout-only for a cell/division/row: in Layer mode
   // there's nothing of the sort to act on, so the browser's own context
   // menu is left alone instead.
   onContextMenu: (x: number, y: number, target: ContextMenuTarget) => void;
@@ -199,7 +200,7 @@ type Props = LayoutSettings & {
  * `.factory-display-case`): the SVG's own top-left corner is what every
  * drag converts pointer positions against, so it has to go on staying the
  * active area's own corner and nothing else. Purely a controlled
- * renderer: every mode-level chrome around it (the Layout/Mapping switch,
+ * renderer: every mode-level chrome around it (the Layout/Layer switch,
  * Resize, the context menu, Divide) lives in `<Composer>`, one level up.
  *
  * Each row is laid out as an actual flow (`layoutRow`): a 1.25U key really
@@ -215,8 +216,8 @@ type Props = LayoutSettings & {
  * mode (dropping on empty space creates a brand new cell there instead,
  * minting it a fresh `keyRef` — see `GridCell.keyRef`), and, once a cell
  * is a Key, a Render/Invoke plugin can be dropped onto it while in
- * Mapping mode — a real `KeyPlugin`, attached to that cell's own `keyRef`
- * (see `keyPluginsFor`/`attachMappingPlugin`), whose content then draws
+ * Layer mode — a real `KeyPlugin`, attached to that cell's own `keyRef`
+ * (see `keyPluginsFor`/`attachLayerPlugin`), whose content then draws
  * right inside the cell's own shape (see `LayoutCell`'s own `keyPlugins`).
  * Adjacent cells can also be merged into one (see the Actions menu in
  * Layout mode) — including a row's still-empty space, which becomes a
@@ -421,7 +422,7 @@ export default function Display({
     itemsY,
     rowPitch,
     svgRef,
-    hasContent: (target) => hasMappingContent(keyRefFor(target)),
+    hasContent: (target) => hasLayerContent(keyRefFor(target)),
     pluginCount: (target) => pluginCountFor(keyRefFor(target)),
     onSelectStart: (target) => {
       if (isSelectedTarget(target)) return;
@@ -475,26 +476,26 @@ export default function Display({
   // This cell/division's own look for its resting state: the Background
   // and Border groups of its `kbrd.render-key` row in the Properties tab
   // (see `keyLook`), which is what the key is actually painted with.
-  // Mapping mode only — Layout mode is about the grid's own disposition,
+  // Layer mode only — Layout mode is about the grid's own disposition,
   // and already shows neither a key's content nor its paint.
   function keyLookFor(keyRef: string | null | undefined): KeyLook | undefined {
     if (mode === "layout" || !layer) return undefined;
     return keyLook(layer.key_properties, keyRef) ?? undefined;
   }
 
-  // Whether `keyRef` has *any* Mapping content at all — including a
+  // Whether `keyRef` has *any* Layer content at all — including a
   // disabled plugin, unlike `keyPluginsFor` above (which only resolves
   // the ones actually drawn). Used to decide whether a key is worth
   // dragging (`useKeyDrag`'s own `hasContent`), the same "any plugin
   // counts" rule Composer's own Copy/Paste/Delete already use
-  // (`hasMappingContent`) — a key whose only plugin happens to be
+  // (`hasLayerContent`) — a key whose only plugin happens to be
   // disabled was otherwise silently undraggable.
-  function hasMappingContent(keyRef: string | null | undefined): boolean {
+  function hasLayerContent(keyRef: string | null | undefined): boolean {
     return Boolean(keyRef && layer?.plugins.some((instance) => instance.key_ref === keyRef));
   }
 
   // How many plugins `keyRef` carries — same "any plugin counts" rule as
-  // `hasMappingContent` above, shown on the key-move drag ghost once it
+  // `hasLayerContent` above, shown on the key-move drag ghost once it
   // grows (see `useKeyDrag`'s own `pluginCount`).
   function pluginCountFor(keyRef: string | null | undefined): number {
     if (!keyRef || !layer) return 0;
@@ -517,12 +518,12 @@ export default function Display({
   }
 
   // Actually creates the real `KeyPlugin` record a Render/Invoke plugin
-  // dropped onto a Key cell/division in Mapping mode attaches to — see
+  // dropped onto a Key cell/division in Layer mode attaches to — see
   // `handleCellDrop`/`handleDivisionDrop`. `keyRef` is whatever the target
   // cell already has, or a freshly minted one passed down from there for
   // a cell that predates this field (saved before `GridCell.keyRef`
   // existed, or one long-lived enough that this is somehow still unset).
-  async function attachMappingPlugin(keyRef: string, pluginId: string) {
+  async function attachLayerPlugin(keyRef: string, pluginId: string) {
     if (!layer) return;
     const plugin = pluginById(pluginId);
     if (!plugin) return;
@@ -593,7 +594,7 @@ export default function Display({
     // The browser still fires a `click` right after the `pointerup` that
     // ends an actual move-drag (see the pointer effect above) — without
     // this, dropping a cell elsewhere would also re-select/toggle it. Same
-    // deal for `keyDrag`'s own Mapping-mode drag, a separate hook/ref.
+    // deal for `keyDrag`'s own Layer-mode drag, a separate hook/ref.
     if (suppressClickRef.current || keyDrag.suppressClickRef.current) {
       suppressClickRef.current = false;
       keyDrag.suppressClickRef.current = false;
@@ -629,7 +630,7 @@ export default function Display({
     if (mode === "layout") {
       if (plugin.category !== "Layout") return;
       // Confirms first if this would discard an existing, different kind
-      // (its own config, or whatever Mapping-mode plugins were attached)
+      // (its own config, or whatever Layer-mode plugins were attached)
       // — see `useDisplayGrid`'s own `assignLayoutPlugin`.
       onAssignLayoutPlugin(primary, plugin.id, plugin.defaultConfig);
       return;
@@ -639,7 +640,7 @@ export default function Display({
     // Nothing about a key limits it to one instance per plugin: two
     // labels, a label over three rectangles — each drop is its own
     // instance, stacked by `position` (see `keyPluginsFor`).
-    if (plugin.category === "Layout" || !isMappingTarget(cell?.typeId)) {
+    if (plugin.category === "Layout" || !isLayerTarget(cell?.typeId)) {
       return;
     }
     // A cell saved before `GridCell.keyRef` existed has none yet — mint
@@ -659,7 +660,7 @@ export default function Display({
       },
     }));
     onFocusCell(primary);
-    void attachMappingPlugin(keyRef, plugin.id);
+    void attachLayerPlugin(keyRef, plugin.id);
   }
 
   function handleRowDragOver(row: number, event: DragEvent<SVGGElement>) {
@@ -773,7 +774,7 @@ export default function Display({
     }
 
     const divCell = divide.cells[primary];
-    if (plugin.category === "Layout" || !isMappingTarget(divCell?.typeId)) {
+    if (plugin.category === "Layout" || !isLayerTarget(divCell?.typeId)) {
       return;
     }
     const keyRef = divCell.keyRef ?? randomId();
@@ -803,7 +804,7 @@ export default function Display({
       };
     });
     onFocusDivision({ parentId, subId: primary });
-    void attachMappingPlugin(keyRef, plugin.id);
+    void attachLayerPlugin(keyRef, plugin.id);
   }
 
   // Right-click handlers — select the target (mirrors the equivalent
@@ -811,9 +812,9 @@ export default function Display({
   // context menu request is never itself the neighbour that completes a
   // merge) and report it to `App`, which opens its own context menu
   // there. A cell/division's own menu fires in either mode now — its
-  // content differs (geometry actions in Layout, Mapping-content actions
-  // in Mapping — see `Composer`); only the empty row's menu below stays
-  // Layout-only, since Mapping has no equivalent to act on there.
+  // content differs (geometry actions in Layout, Layer-content actions
+  // in Layer — see `Composer`); only the empty row's menu below stays
+  // Layout-only, since Layer has no equivalent to act on there.
   function handleCellContextMenu(index: number, event: ReactMouseEvent<SVGGElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -994,7 +995,7 @@ export default function Display({
                     // from all of its members together. Queued for its own
                     // pass below rather than rendered here — see
                     // `pendingGrips` — and skipped entirely while "Resize" is
-                    // off (Layout mode only: Mapping mode hides the switch
+                    // off (Layout mode only: Layer mode hides the switch
                     // and never shows a grip regardless of what it was left
                     // at), so there's nothing to show *or* drag.
                     if (mode === "layout" && resizeEnabled && group.length === 1 && cell) {
@@ -1045,13 +1046,13 @@ export default function Display({
                       );
                     }
 
-                    // Mapping mode only ever shows a cell whose own Layout
-                    // plugin opts into it (`mapping-visible` — Key does,
+                    // Layer mode only ever shows a cell whose own Layout
+                    // plugin opts into it (`layer-visible` — Key does,
                     // Space doesn't) — an invisible one still keeps its row
                     // slot (nothing here changes `layoutRow`'s own math),
                     // just nothing renders there: no shape, no text, and
                     // (having no element at all) no longer clickable either.
-                    if (mode !== "layout" && !isMappingVisible(cell?.typeId)) {
+                    if (mode !== "layout" && !isLayerVisible(cell?.typeId)) {
                       return null;
                     }
 
@@ -1064,7 +1065,23 @@ export default function Display({
                         typeId={cell?.typeId}
                         keyPlugins={keyPluginsFor(cell?.keyRef)}
                         look={keyLookFor(cell?.keyRef)}
-                        unit={hasContent ? cell?.unit : undefined}
+                        // A merge is measured rather than asked: its
+                        // width on screen back-converted to Units (see
+                        // `unitsAcross`), which for a group spanning
+                        // several rows is the widest of them. `cell.unit`
+                        // is the primary member's own share alone and
+                        // says nothing about the rest of the shape, and
+                        // summing every member would count a stacked
+                        // merge's height into a number that only means
+                        // width. (`LayoutCellDivision` measures its own
+                        // the same way.)
+                        unit={
+                          hasContent
+                            ? merged
+                              ? unitsAcross(bounds.width, unitMm, gapMm)
+                              : cell?.unit
+                            : undefined
+                        }
                         isEmpty={!hasContent}
                         isSelected={selectedCellIndices.includes(primary)}
                         isDropTarget={
@@ -1074,8 +1091,8 @@ export default function Display({
                           keyDrag.dragTarget?.kind === "cell" &&
                           keyDrag.dragTarget.id === primary
                         }
-                        // Layout-only: Mapping mode shows the shape (once
-                        // `mapping-visible`) with no size/type caption under
+                        // Layout-only: Layer mode shows the shape (once
+                        // `layer-visible`) with no size/type caption under
                         // it — see `LayoutCell`'s own `showText`.
                         showText={mode === "layout"}
                         onClick={(event) => handleClick(event, primary)}
@@ -1088,7 +1105,7 @@ export default function Display({
                         // Layout: only a single, unmerged cell has one
                         // well-defined place to drag *from* — same
                         // restriction the resize grip already has (see
-                        // `pendingGrips` above). Mapping: any Key cell that
+                        // `pendingGrips` above). Layer: any Key cell that
                         // actually has content — dragging it moves that
                         // content onto whatever key it's dropped on (see
                         // `useKeyDrag`), in place of the old "Move to" menu
@@ -1115,7 +1132,7 @@ export default function Display({
                   );
                   // A row's own trailing empty space (its dashed drop
                   // target) is a Layout-only concept — there's nothing to
-                  // drop there in Mapping mode, and the row itself isn't a
+                  // drop there in Layer mode, and the row itself isn't a
                   // selectable target either.
                   if (mode !== "layout" || remaining <= 0) return cellItems;
 

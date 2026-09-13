@@ -11,19 +11,49 @@ import { DEFAULT_STATE_NAME } from "../classes/inspectorHelpers";
 import { stateConfig } from "../plugins/state";
 import type { KeyPlugin } from "../types/layer";
 import type { CellRect } from "../utils/layout";
+import { fitFontSize, type FittedLine } from "../utils/textFit";
 import type { KeyLook } from "../utils/keyProperties";
 
-const LABEL_FONT_SIZE_MM = 2.5;
+// How much of a cell the label is sized to take, across and down (see
+// `fitFontSize`). The size isn't fixed: one layout holds cells an order
+// of magnitude apart — a 1U key beside a 9U spacebar, and merges several
+// rows tall — and a size chosen for either one is wrong for the other.
+// So each cell's label is fitted to the cell, and stays the same
+// *fraction* of it instead of the same number of millimetres.
+//
+// Height is what binds in almost every case, two short lines being far
+// easier to fit across a keycap than down it — which is what keeps a row
+// of differently-sized keys reading as one row of labels rather than as
+// a size chart, and stops a 9U spacebar shouting its own name.
+// Half rather than a fuller box: at 0.8 the label read as the cell's
+// content rather than as an annotation over it, which in Layout mode —
+// where the point is the shape of the grid — is the wrong thing to be
+// looking at.
+const LABEL_FILL = 0.5;
 // Vertical spacing between the label's own lines (size, Layout plugin
-// type, each attached Mapping plugin type) — see `labelLines` below.
-const LABEL_LINE_HEIGHT_MM = LABEL_FONT_SIZE_MM * 1.2;
+// type, each attached Layer plugin type) — see `labelLines` below —
+// as a multiple of whatever size the label came out at.
+const LABEL_LINE_HEIGHT = 1.2;
+// The type line's size as a fraction of the size line's. The size is
+// what a cell is being read for in Layout mode and the type is the
+// qualifier under it, so the two are set as a heading and its caption
+// rather than as two equal lines — the size bold, the type smaller and
+// regular weight. `fitFontSize` sizes the pair as one block, so this
+// only ever changes their proportion to each other, never how much of
+// the cell they take together.
+const LABEL_TYPE_SCALE = 0.8;
+// The floor a label stops shrinking at, in mm. Below roughly this a
+// label is a smudge whatever it says, so a sliver of a cell overflows
+// slightly rather than drawing something unreadable and pretending it
+// fit.
+const LABEL_MIN_SIZE_MM = 1;
 // The same "this is the one" the rest of the app is drawn in. A `stroke`
 // presentation attribute does take a `var()` — the labels below have read
 // their fill that way all along — so there's no literal to keep in step
 // with the palette here.
 const SELECTED_STROKE = "var(--kbrd-color-selected)";
 // Both kinds of drag destination — a plugin dragged from the Inspector
-// (`isDropTarget`) and a key's Mapping content dragged from another key
+// (`isDropTarget`) and a key's Layer content dragged from another key
 // (`isMoveTarget`, see `useKeyDrag`) — read the same way: the cell/
 // division's existing border just turns solid white (`shapeProps`'s own
 // dashed/transparent look otherwise stays), with a symbol centred over it
@@ -76,8 +106,10 @@ type Props = {
   // or null when this cell hasn't been assigned a kind yet.
   typeId?: string | null;
   // Keycap width as a multiple of the display's Unit, shown above the type
-  // label — undefined when the cell itself is unknown (shouldn't normally
-  // happen, since every `GridCell` has a `unit`).
+  // label. Undefined leaves that line out altogether, which is what the
+  // callers use for a shape no single Unit describes: a merge, whose
+  // footprint is all of its members together (see `Display`), and a cell
+  // or division with nothing assigned to it yet.
   unit?: number;
   isSelected?: boolean;
   // A row's trailing empty space (or a fully empty row) rather than a real
@@ -86,7 +118,7 @@ type Props = {
   // solid, since there's nothing there yet.
   isEmpty?: boolean;
   isDropTarget?: boolean;
-  // Mapping mode's own drag destination (see `useKeyDrag`) — drawn as a
+  // Layer mode's own drag destination (see `useKeyDrag`) — drawn as a
   // thick outline surrounding the whole shape, on top of whatever else it
   // already looks like (selected, empty…), so the drop target is
   // unambiguous regardless of the cell/division's own current state.
@@ -100,7 +132,7 @@ type Props = {
   // strokes can land out of sync and visually fill each other's gaps in,
   // reading as one solid line where neither one actually is.
   showBorder?: boolean;
-  // Hides the size/type label text — Mapping mode's own look, where the
+  // Hides the size/type label text — Layer mode's own look, where the
   // cell shape stays but the Layout-only "1U · Key" caption underneath it
   // doesn't (see `Display`'s own `mode` prop).
   showText?: boolean;
@@ -110,7 +142,7 @@ type Props = {
   // them in reverse for that reason). Already resolved and sorted by
   // `Display`,
   // which is the one that actually knows about `layer.plugins`. Drawn in
-  // Mapping mode in place of the text label, each one's own `Renderer`
+  // Layer mode in place of the text label, each one's own `Renderer`
   // clipped to this cell's shape — the resting ("up") look only, no
   // press/down-state simulation (unlike `<Preview>`'s own interactive
   // keyboard, nothing here fakes pressing a key).
@@ -119,7 +151,7 @@ type Props = {
   // tab (its Background and Border groups) — resolved by `Display`, the
   // one that knows about `layer.key_properties`. Undefined leaves the cell
   // with the grid's own chrome (a transparent fill and the dashed outline
-  // below), which is also what an untouched key gets: Mapping mode's own
+  // below), which is also what an untouched key gets: Layer mode's own
   // look, since Layout mode is about the grid rather than about how a key
   // is painted.
   look?: KeyLook;
@@ -173,15 +205,39 @@ export default function LayoutCell({
       : isSelected
         ? SELECTED_STROKE
         : "var(--kbrd-border-color)";
-  // Size, then the Layout plugin's own type — one per line. The Mapping
+  // Size, then the Layout plugin's own type — one per line. The Layer
   // plugin(s) attached via `pluginIds` used to get their own line(s) too,
   // but that grew this label too tall for a typical cell, so it's
-  // deliberately left out here (still shown in Mapping mode itself, via
+  // deliberately left out here (still shown in Layer mode itself, via
   // each plugin's own `Renderer`).
-  const labelLines = [
-    typeof unit === "number" ? `${unit}U` : null,
-    type?.name ?? null,
-  ].filter((line): line is string => Boolean(line));
+  // The weight and the scale here are what the label is both measured
+  // and drawn by — see `textWidthRatio` and `fitFontSize`, which need to
+  // know the two lines aren't the same size before they can fit them as
+  // one block.
+  const labelParts: (FittedLine | null)[] = [
+    typeof unit === "number"
+      ? { text: `${unit}U`, bold: true, scale: 1 }
+      : null,
+    type ? { text: type.name, bold: false, scale: LABEL_TYPE_SCALE } : null,
+  ];
+  const labelLines = labelParts.filter((line) => line !== null);
+  // Fitted to this cell rather than fixed, and to the box the label is
+  // actually anchored in — which for a stepped merge is one of its own
+  // spans, not the notched bounding box around the whole thing.
+  const labelSize = fitFontSize(labelLines, labelBounds, {
+    fill: LABEL_FILL,
+    lineHeightRatio: LABEL_LINE_HEIGHT,
+    min: LABEL_MIN_SIZE_MM,
+  });
+  // Each line's own size, and the drop from the line above it — taken at
+  // the descending line's own size, the way `fitFontSize` counted the
+  // block's height.
+  const lineSizes = labelLines.map((line) => labelSize * (line.scale ?? 1));
+  const lineDrops = lineSizes.map((size, index) =>
+    index === 0 ? 0 : size * LABEL_LINE_HEIGHT,
+  );
+  // The baselines' own span, which is what gets centred in the cell.
+  const labelSpan = lineDrops.reduce((total, drop) => total + drop, 0);
   // The key's own border, whenever it has one and nothing louder is
   // being said over it: a highlight (selection, either drop target) is
   // still the one thing that wins the outline, the same way it already
@@ -295,14 +351,10 @@ export default function LayoutCell({
       {showText && labelLines.length > 0 && (
         <text
           x={labelBounds.x + labelBounds.width / 2}
-          y={
-            labelBounds.y +
-            labelBounds.height / 2 -
-            ((labelLines.length - 1) * LABEL_LINE_HEIGHT_MM) / 2
-          }
+          y={labelBounds.y + labelBounds.height / 2 - labelSpan / 2}
           textAnchor="middle"
           dominantBaseline="middle"
-          fontSize={LABEL_FONT_SIZE_MM}
+          fontSize={labelSize}
           fill="var(--kbrd-border-alt)"
           style={{ pointerEvents: "none" }}
         >
@@ -310,12 +362,11 @@ export default function LayoutCell({
             <tspan
               key={index}
               x={labelBounds.x + labelBounds.width / 2}
-              dy={index === 0 ? 0 : LABEL_LINE_HEIGHT_MM}
-              // The size (always the first line) reads bold — the Layout
-              // plugin's own type name underneath it stays regular weight.
-              fontWeight={index === 0 ? "bold" : "normal"}
+              dy={lineDrops[index]}
+              fontSize={lineSizes[index]}
+              fontWeight={line.bold ? "bold" : "normal"}
             >
-              {line}
+              {line.text}
             </tspan>
           ))}
         </text>

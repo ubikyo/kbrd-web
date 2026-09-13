@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { RefObject, PointerEvent as ReactPointerEvent } from "react";
 
 import { createFollowGhost } from "./inspectorHelpers";
-import { isMappingTarget } from "../plugins/registry";
+import { isLayerTarget } from "../plugins/registry";
 import type { GridCell, MergeGroups } from "../types/layout";
 import { layoutRow, primaryOf } from "../utils/layout";
 import type { ElementSize } from "./useElementSize";
@@ -32,15 +32,15 @@ export function sameKeyDragTarget(a: KeyDragTarget, b: KeyDragTarget): boolean {
 }
 
 /**
- * Mapping mode's own drag — moving a key's Mapping content (its attached
+ * Layer mode's own drag — moving a key's Layer content (its attached
  * `KeyPlugin`s) onto another key, in place of the old "Move to" menu item.
  * Same plain-pointer-events approach as `useCellMove` (native HTML5 DnD is
  * too inconsistent for this on SVG — see that hook's own docblock), but
  * hit-tests the drop position against the grid's own geometry instead of
  * computing a row-insertion point: there's no geometry to reorder here,
  * only "which existing key (cell or division) is the pointer over right
- * now". A drop target only needs to be a valid Mapping target
- * (`isMappingTarget` — the same rule a plugin dropped from the Inspector
+ * now". A drop target only needs to be a valid Layer target
+ * (`isLayerTarget` — the same rule a plugin dropped from the Inspector
  * already goes through) and not the cell/division being dragged itself —
  * unlike the *source*, it does NOT need to already have content: an empty
  * key is a perfectly good place to move something to.
@@ -64,7 +64,7 @@ export function useKeyDrag(params: {
   itemsY: number;
   rowPitch: number;
   svgRef: RefObject<SVGSVGElement | null>;
-  // Whether `target` currently has Mapping content worth dragging — only
+  // Whether `target` currently has Layer content worth dragging — only
   // gates *starting* a drag (there'd be nothing to move otherwise), never
   // the destination.
   hasContent: (target: KeyDragTarget) => boolean;
@@ -155,7 +155,7 @@ export function useKeyDrag(params: {
         target.kind === "cell"
           ? cells[target.id]?.typeId
           : cells[target.parentId]?.divide?.cells[target.subId]?.typeId;
-      return isMappingTarget(typeId);
+      return isLayerTarget(typeId);
     }
 
     function handleMove(event: PointerEvent) {

@@ -26,7 +26,7 @@ type Props = {
   // with current" picker (every *other* layer) without this component
   // needing to know anything about that feature itself.
   onItemsChange?: (items: LayerData[]) => void;
-  // Layer only matters in Mapping mode (Render/Invoke plugins attach to
+  // Layer only matters in Layer mode (Render/Invoke plugins attach to
   // it; Layout plugins attach to the Layout itself) — `Composer` hides
   // this picker in Layout mode by setting this, rather than unmounting
   // the component outright, so switching modes back and forth doesn't

@@ -29,10 +29,10 @@ type PluginModule = (typeof pluginModules)[number];
 
 export type PluginDefinition = Omit<
   PluginModule,
-  "LayoutEditor" | "MappingEditor" | "Renderer"
+  "LayoutEditor" | "LayerEditor" | "Renderer"
 > & {
   LayoutEditor: ComponentType<PluginEditorProps>;
-  MappingEditor: ComponentType<PluginEditorProps>;
+  LayerEditor: ComponentType<PluginEditorProps>;
   Renderer: ComponentType<PluginRendererProps>;
   // Declared (as `false`) only by a plugin that isn't a user's to attach
   // or detach — `kbrd.render-key` is the element's own form, not something
@@ -57,19 +57,19 @@ export const isDeletable = (plugin: PluginDefinition) =>
   plugin.deletable !== false;
 
 // A Layout plugin's own `capabilities` (`kbrd.layout-key`/`kbrd.layout-space`,
-// see their own `plugin.json`) drive how a cell behaves in Mapping mode —
-// see `Display`/`LayoutCellDivision`. `mapping-visible` is whether it still shows
+// see their own `plugin.json`) drive how a cell behaves in Layer mode —
+// see `Display`/`LayoutCellDivision`. `layer-visible` is whether it still shows
 // at all there (Key does, Space doesn't: hidden entirely, though its own
-// row/grid space stays reserved); `mapping-target` is whether an
+// row/grid space stays reserved); `layer-target` is whether an
 // Invoke/Display plugin can be dropped onto it. Both default to `false`
 // for a cell with no `typeId` yet, or a `typeId` the registry doesn't
 // recognize.
-export const isMappingVisible = (typeId: string | null | undefined) =>
+export const isLayerVisible = (typeId: string | null | undefined) =>
   Boolean(
-    typeId && pluginById(typeId)?.capabilities.includes("mapping-visible"),
+    typeId && pluginById(typeId)?.capabilities.includes("layer-visible"),
   );
 
-export const isMappingTarget = (typeId: string | null | undefined) =>
+export const isLayerTarget = (typeId: string | null | undefined) =>
   Boolean(
-    typeId && pluginById(typeId)?.capabilities.includes("mapping-target"),
+    typeId && pluginById(typeId)?.capabilities.includes("layer-target"),
   );

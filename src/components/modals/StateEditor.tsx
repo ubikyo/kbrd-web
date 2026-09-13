@@ -12,7 +12,7 @@ type Props = {
   onSubmit: (name: string, copyFrom: string | null) => void;
 };
 
-/** Add/Edit a Mapping state — shared by both actions on the States menu
+/** Add/Edit a Layer state — shared by both actions on the States menu
  * (see `Inspector`'s Properties tab): a name, and optionally another
  * state to seed/reset every field's values from. */
 export default function StateEditor({

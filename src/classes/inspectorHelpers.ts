@@ -138,7 +138,7 @@ function getHiddenDragImage() {
  * A small, cursor-following square that grows into a wider rounded
  * rectangle after a short delay, swapping its content in the process —
  * used as the shared visual for both dragging a plugin out of the
- * accordion (grip symbol → plugin name) and dragging a key's Mapping
+ * accordion (grip symbol → plugin name) and dragging a key's Layer
  * content onto another key (⤵ symbol → plugin count). A real DOM element
  * rather than a native drag-image snapshot, since a native drag image is
  * a one-time capture the browser takes once at `dragstart` and can never

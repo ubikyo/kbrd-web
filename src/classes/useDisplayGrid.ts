@@ -247,7 +247,7 @@ export function useDisplayGrid(params: {
 
   // Every selection at once, `displaySelected` included — unlike
   // `clearCellSelection` above. Used when switching between Layout and
-  // Mapping mode, since a selection made in one mode has no meaning in
+  // Layer mode, since a selection made in one mode has no meaning in
   // the other (their content is isolated, only geometry is shared).
   function clearSelection() {
     setSelectedCellIndices([]);
@@ -536,7 +536,7 @@ export function useDisplayGrid(params: {
   // place for an arrow to start from, so it's left alone rather than
   // collapsed onto an arbitrary member of itself.
   //
-  // `isNavigable` is how Mapping mode keeps the arrows off a Space cell
+  // `isNavigable` is how Layer mode keeps the arrows off a Space cell
   // (see `Composer`): it renders nothing at all there, so there'd be no
   // selection to see. This hook has no `mode` of its own to decide that
   // from — the caller passes whichever rule its mode goes by.
@@ -820,7 +820,7 @@ export function useDisplayGrid(params: {
     selectDivision({ parentId: index, subId: 0 });
   }
 
-  // Copy the smallest-id selected cell's type, config and Mapping plugins
+  // Copy the smallest-id selected cell's type, config and Layer plugins
   // — not its own id or position — the same "primary" convention a merge
   // already uses to pick which member represents a group. Cloned so a
   // later Paste's own further edits can't reach back into this cell's
@@ -843,7 +843,7 @@ export function useDisplayGrid(params: {
   // Each paste target gets its own fresh `keyRef` (see `GridCell.keyRef`)
   // rather than inheriting the copied cell's — pasting the same content
   // onto two different cells must never leave them both pointing real
-  // Mapping-mode plugins at the same reference.
+  // Layer-mode plugins at the same reference.
   function applyPasteOntoCell(id: number) {
     if (!copiedCell) return;
     changeCell(id, {
@@ -966,7 +966,7 @@ export function useDisplayGrid(params: {
 
   // Assigning (or re-assigning, onto a different kind) a Layout plugin
   // always mints a fresh `keyRef` — see `GridCell.keyRef` — so whatever
-  // Mapping-mode plugins get dropped on it next attach to *this* instance,
+  // Layer-mode plugins get dropped on it next attach to *this* instance,
   // never to whatever a previous kind change or a stale save left behind.
   function applyLayoutPluginToCell(
     id: number,
@@ -1003,7 +1003,7 @@ export function useDisplayGrid(params: {
   // before calling this) sets its kind — same rule as `pasteToEmptyRow`:
   // dropping the kind it already is is always a no-op (nothing to lose),
   // but a *different* kind onto a cell that already has content (its own
-  // config, or Mapping-mode plugins a kind change would discard) asks
+  // config, or Layer-mode plugins a kind change would discard) asks
   // first (`pendingOverwrite`) rather than silently overwriting it.
   function assignLayoutPlugin(
     index: number,

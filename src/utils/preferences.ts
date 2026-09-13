@@ -14,7 +14,7 @@
  */
 
 /** Which mode `App` starts in — see its own `mode`. */
-export type StartupMode = "layout" | "mapping";
+export type StartupMode = "layout" | "layer";
 
 /**
  * Settings' Appearance tab — which of the two palettes in
@@ -74,7 +74,7 @@ function save(key: string, value: string) {
 const PANEL_STATES = ["open", "close"] as const;
 
 export const loadStartupMode = () =>
-  load(STARTUP_MODE_KEY, ["layout", "mapping"] as const, DEFAULT_STARTUP_MODE);
+  load(STARTUP_MODE_KEY, ["layout", "layer"] as const, DEFAULT_STARTUP_MODE);
 
 export const saveStartupMode = (mode: StartupMode) =>
   save(STARTUP_MODE_KEY, mode);

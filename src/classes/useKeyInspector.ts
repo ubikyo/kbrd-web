@@ -7,7 +7,7 @@ import {
 } from "../api/layers";
 import {
   isDeletable,
-  isMappingVisible,
+  isLayerVisible,
   pluginById,
   plugins,
 } from "../plugins/registry";
@@ -48,7 +48,7 @@ export function useKeyInspector(params: {
   // `kbrd.layout-space`) — see `App`'s own `selectedKeyTypeId`, set the
   // same place `selectedKey` itself is.
   selectedKeyTypeId: string | null;
-  mode: "layout" | "mapping";
+  mode: "layout" | "layer";
   onChange: (plugins: KeyPlugin[]) => void;
   onKeyPropertiesChange: (properties: KeyProperty[]) => void;
 }) {
@@ -80,7 +80,7 @@ export function useKeyInspector(params: {
   const pendingPropertySaves = usePendingSaves<string, KeyPropertyConfig>();
 
   // Layout plugins (positioning/kind) are only draggable in Layout mode;
-  // Invoke/Display plugins (behaviour/content) only in Mapping mode.
+  // Invoke/Display plugins (behaviour/content) only in Layer mode.
   // A non-deletable plugin is the element's own form rather than
   // something attached to it (see `isDeletable`), so it never belongs in
   // the list you drag from either.
@@ -103,8 +103,8 @@ export function useKeyInspector(params: {
     (property) => property.key_ref === selectedKey,
   );
   const propertyConfig = resolveKeyPropertyConfig(selectedProperty?.config);
-  // `isMappingVisible` is the same "does this Layout plugin still show up
-  // in Mapping mode" capability check `Display`/`LayoutCellDivision` use
+  // `isLayerVisible` is the same "does this Layout plugin still show up
+  // in Layer mode" capability check `Display`/`LayoutCellDivision` use
   // to hide a Space's cell there — Key has it, Space doesn't, which is
   // exactly the Key/Space distinction this needs too. No `typeId` yet (a
   // cell that predates `GridCell.typeId`, or nothing selected at all)
@@ -112,7 +112,7 @@ export function useKeyInspector(params: {
   const targetType: "key" | "space" | "background" =
     selectedKey === BACKGROUND_REF
       ? "background"
-      : selectedKeyTypeId && !isMappingVisible(selectedKeyTypeId)
+      : selectedKeyTypeId && !isLayerVisible(selectedKeyTypeId)
         ? "space"
         : "key";
   const systemPluginName =

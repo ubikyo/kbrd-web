@@ -1,5 +1,7 @@
 import {
   Box,
+  Button,
+  EmptyState,
   Group,
   HoverCard,
   Kbd,
@@ -8,6 +10,7 @@ import {
   Stack,
   Switch,
   Text,
+  Tooltip,
   UnstyledButton,
 } from "@mantine/core";
 import {
@@ -21,6 +24,9 @@ import {
   MdFindReplace,
   MdGridOn,
   MdHelp,
+  MdKeyboardAlt,
+  MdLayers,
+  MdSettings,
 } from "react-icons/md";
 import { useEffect, useState } from "react";
 import type { RefObject } from "react";
@@ -31,14 +37,16 @@ import type { EntityEditorsApi } from "../classes/useEntityEditors";
 import type { KeyDragTarget } from "../classes/useKeyDrag";
 import { useLayoutShortcuts } from "../classes/useLayoutShortcuts";
 import { useUndoHistory } from "../classes/useUndoHistory";
-import { isMappingTarget, isMappingVisible } from "../plugins/registry";
+import { isLayerTarget, isLayerVisible } from "../plugins/registry";
 import type { KeyPlugin, KeyProperty, LayerData } from "../types/layer";
 import type { LayoutData, LayoutSettings } from "../types/layout";
 import { randomId } from "../utils/id";
+import kbrdLogo from "../assets/media/KBRD.svg";
 import Display from "./Display";
 import type { ContextMenuTarget } from "./Display";
 import Layer from "./menu/Layer";
 import type { LayerMenuHandle } from "./menu/Layer";
+import LayoutPicker from "./menu/LayoutPicker";
 import Confirmation from "./modals/Confirmation";
 import Divide from "./modals/Divide";
 
@@ -61,7 +69,7 @@ function ShortcutHint({ children }: { children: React.ReactNode }) {
 // shortcut the *current* mode actually responds to (see
 // `useLayoutShortcuts` and Composer's own Tab handler below), not the
 // context menu's per-selection ones above: Copy/Paste/Delete only fire in
-// Layout mode (Mapping has no grid structure of its own left to act on —
+// Layout mode (Layer has no grid structure of its own left to act on —
 // same reasoning as the Resize shortcut beside it), while Undo and the
 // mode switch itself are global.
 const LAYOUT_SHORTCUTS = [
@@ -73,7 +81,7 @@ const LAYOUT_SHORTCUTS = [
   { label: "Undo", keys: `${MOD_KEY_LABEL}Z` },
   { label: "Switch mode", keys: "Tab" },
 ];
-const MAPPING_SHORTCUTS = [
+const LAYER_SHORTCUTS = [
   { label: "Move selection", keys: "← →" },
   { label: "Undo", keys: `${MOD_KEY_LABEL}Z` },
   { label: "Switch mode", keys: "Tab" },
@@ -81,10 +89,21 @@ const MAPPING_SHORTCUTS = [
 
 type Props = {
   layoutSettings: LayoutSettings;
-  mode: "layout" | "mapping";
-  onModeChange: (mode: "layout" | "mapping") => void;
+  mode: "layout" | "layer";
+  onModeChange: (mode: "layout" | "layer") => void;
   layout: LayoutData | null;
+  // Whether the layout list has been loaded at all yet (see `App`) — the
+  // empty state below only stands in for the display once we know there
+  // really is no layout, not while the first list is still on its way.
+  layoutsLoaded: boolean;
+  // The Layout picker's own selection — same role `onChangeLayer` plays
+  // for the Layer picker beside it, Layer mode's counterpart.
+  onChangeLayout: (layout: LayoutData | null) => void;
   layer: LayerData | null;
+  // Whether the current layout's layer list has been fetched yet (see
+  // `App`) — same role `layoutsLoaded` plays above, for Layer mode's
+  // own empty state.
+  layersLoaded: boolean;
   grid: DisplayGridApi;
   entityEditors: EntityEditorsApi;
   // Gates `useLayoutShortcuts`'s own shortcuts while Settings has its own
@@ -92,15 +111,18 @@ type Props = {
   // the equivalent flags for the Layout/Layer editors and the delete
   // confirmation, all three owned by `App` alongside Settings.
   settingsOpened: boolean;
+  // Settings has no bar of its own to live in any more — it sits in this
+  // pane's own bottom-right corner, beside the shortcuts card.
+  onOpenSettings: () => void;
   // Saves a freshly-created `KeyPlugin`, or a batch change to `key_properties`,
   // back onto the layer — see `Display`'s own docblock on
-  // `layer`/`onChangePlugins`, and this file's own Mapping Copy/Paste/
+  // `layer`/`onChangePlugins`, and this file's own Layer Copy/Paste/
   // Delete/Move operations below (the other source of both).
   onChangePlugins: (plugins: KeyPlugin[]) => void;
   onChangeKeyProperties: (keyProperties: KeyProperty[]) => void;
-  // The Layer picker (top-right of the display, Mapping-mode only — see
-  // `<Layer>`'s own `hidden`) lives here instead of `App`'s header now,
-  // right beside the content it actually governs. Passed as its own prop
+  // The Layer picker (top-right of the display, Layer-mode only — see
+  // `<Layer>`'s own `hidden`) lives here, right beside the content it
+  // actually governs, as its Layout counterpart now does. Passed as its own prop
   // rather than read off `entityEditors` in here — accessing a ref held
   // inside another object, mid-render, trips `react-hooks/refs` for
   // every other property read off that same object in this component.
@@ -115,22 +137,26 @@ type Props = {
  * the grid-editing keyboard shortcuts/undo history). Both modes share the
  * exact same `<Display>` — its synthetic Unit grid *is* "the layout": a
  * Key cell/division is where a Render/Invoke plugin actually gets dropped
- * in Mapping mode too (see `Display`'s own `keyPluginsFor`/
+ * in Layer mode too (see `Display`'s own `keyPluginsFor`/
  * `handleCellDrop`), not a separate real-geometry view. Resize and Divide
  * stay Layout-only chrome (there's no grid structure left to act on in
- * Mapping mode); the context menu and Copy/Paste/Delete now work in
+ * Layer mode); the context menu and Copy/Paste/Delete now work in
  * *either* mode, each on its own kind of content — geometry in Layout,
- * a key's Mapping content (its attached plugins/properties) in Mapping.
+ * a key's Layer content (its attached plugins/properties) in Layer.
  */
 export default function Composer({
   layoutSettings,
   mode,
   onModeChange,
   layout,
+  layoutsLoaded,
+  onChangeLayout,
   layer,
+  layersLoaded,
   grid,
   entityEditors,
   settingsOpened,
+  onOpenSettings,
   onChangePlugins,
   onChangeKeyProperties,
   layerMenuRef,
@@ -162,27 +188,27 @@ export default function Composer({
     clearCellSelection: grid.clearCellSelection,
   });
 
-  // --- Mapping mode's own Copy/Paste/Delete/Move ---------------------
+  // --- Layer mode's own Copy/Paste/Delete/Move ---------------------
   //
-  // Mapping content (a key's attached `KeyPlugin`s/`KeyProperty`) lives on
+  // Layer content (a key's attached `KeyPlugin`s/`KeyProperty`) lives on
   // `layer`, which `useDisplayGrid` knows nothing about — so unlike
   // Layout's geometry operations (owned by `grid`), these live here,
   // calling `api/layers.ts` directly and pushing results back up via
   // `onChangePlugins`/`onChangeKeyProperties`, the same pattern `Display`'s
-  // own `attachMappingPlugin` already uses for a plugin dropped from the
+  // own `attachLayerPlugin` already uses for a plugin dropped from the
   // Inspector.
   const [copiedKeyRef, setCopiedKeyRef] = useState<string | null>(null);
-  const [pendingMappingOverwrite, setPendingMappingOverwrite] = useState<
+  const [pendingLayerOverwrite, setPendingLayerOverwrite] = useState<
     KeyDragTarget[] | null
   >(null);
-  const [pendingMappingDelete, setPendingMappingDelete] = useState<
+  const [pendingLayerDelete, setPendingLayerDelete] = useState<
     string[] | null
   >(null);
   const [pendingMove, setPendingMove] = useState<
     { source: string; dest: string } | null
   >(null);
 
-  function hasMappingContent(keyRef: string | null | undefined): boolean {
+  function hasLayerContent(keyRef: string | null | undefined): boolean {
     return Boolean(keyRef && layer?.plugins.some((plugin) => plugin.key_ref === keyRef));
   }
 
@@ -212,34 +238,34 @@ export default function Composer({
   // selected division of the same parent (mirrors `grid`'s own
   // cell-vs-division selection split) — regardless of whether it already
   // has a `keyRef` (see `resolveKeyRef`) or any content: the same rule
-  // Display's own plugin-drop already uses (`isMappingTarget`), not
+  // Display's own plugin-drop already uses (`isLayerTarget`), not
   // "already has a keyRef", which excluded a perfectly valid empty target.
-  function selectedMappingTargets(): KeyDragTarget[] {
+  function selectedLayerTargets(): KeyDragTarget[] {
     if (grid.selectedCellIndices.length === 1 && grid.selectedDivisionIndices.length > 0) {
       const parentId = grid.selectedCellIndices[0];
       const parent = grid.cells[parentId];
       return grid.selectedDivisionIndices
-        .filter((subId) => isMappingTarget(parent?.divide?.cells[subId]?.typeId))
+        .filter((subId) => isLayerTarget(parent?.divide?.cells[subId]?.typeId))
         .map((subId) => ({ kind: "division" as const, parentId, subId }));
     }
     return grid.selectedCellIndices
-      .filter((id) => isMappingTarget(grid.cells[id]?.typeId))
+      .filter((id) => isLayerTarget(grid.cells[id]?.typeId))
       .map((id) => ({ kind: "cell" as const, id }));
   }
 
   // "Copy" only for a single selected key that actually has content — same
   // rule as Layout's own `canCopySelection`.
-  const mappingSelection = selectedMappingTargets();
-  const mappingSelectionKeyRef =
-    mappingSelection.length === 1 ? existingKeyRefFor(mappingSelection[0]) : null;
-  const canCopyMapping = hasMappingContent(mappingSelectionKeyRef);
-  const mappingPasteTargets = copiedKeyRef
-    ? mappingSelection.filter((target) => existingKeyRefFor(target) !== copiedKeyRef)
+  const layerSelection = selectedLayerTargets();
+  const layerSelectionKeyRef =
+    layerSelection.length === 1 ? existingKeyRefFor(layerSelection[0]) : null;
+  const canCopyLayer = hasLayerContent(layerSelectionKeyRef);
+  const layerPasteTargets = copiedKeyRef
+    ? layerSelection.filter((target) => existingKeyRefFor(target) !== copiedKeyRef)
     : [];
-  const canPasteMapping = mappingPasteTargets.length > 0;
+  const canPasteLayer = layerPasteTargets.length > 0;
 
-  function copyMappingSelection() {
-    if (mappingSelectionKeyRef) setCopiedKeyRef(mappingSelectionKeyRef);
+  function copyLayerSelection() {
+    if (layerSelectionKeyRef) setCopiedKeyRef(layerSelectionKeyRef);
   }
 
   // Duplicates the copied key's plugins (and mirrors its own `KeyProperty`,
@@ -248,7 +274,7 @@ export default function Composer({
   // first whichever ones already had content. Each target's `keyRef` is
   // resolved (minting one if needed) right before it's used — safe here
   // since this only ever runs from an actual Paste, never during render.
-  async function applyMappingPaste(targets: KeyDragTarget[]) {
+  async function applyLayerPaste(targets: KeyDragTarget[]) {
     if (!layer || !copiedKeyRef) return;
     const sourceProperty =
       layer.key_properties.find((item) => item.key_ref === copiedKeyRef) ?? null;
@@ -256,7 +282,7 @@ export default function Composer({
     let keyProperties = layer.key_properties;
     for (const target of targets) {
       const targetKeyRef = resolveKeyRef(target);
-      if (hasMappingContent(targetKeyRef)) {
+      if (hasLayerContent(targetKeyRef)) {
         const cleared = await clearKey(layer.id, targetKeyRef);
         plugins = cleared.plugins;
         keyProperties = cleared.key_properties;
@@ -273,25 +299,25 @@ export default function Composer({
     onChangeKeyProperties(keyProperties);
   }
 
-  function pasteMappingSelection() {
-    if (mappingPasteTargets.length === 0) return;
-    if (mappingPasteTargets.some((target) => hasMappingContent(existingKeyRefFor(target)))) {
-      setPendingMappingOverwrite(mappingPasteTargets);
+  function pasteLayerSelection() {
+    if (layerPasteTargets.length === 0) return;
+    if (layerPasteTargets.some((target) => hasLayerContent(existingKeyRefFor(target)))) {
+      setPendingLayerOverwrite(layerPasteTargets);
     } else {
-      void applyMappingPaste(mappingPasteTargets);
+      void applyLayerPaste(layerPasteTargets);
     }
   }
 
-  function requestDeleteMappingSelection() {
-    const targets = mappingSelection
+  function requestDeleteLayerSelection() {
+    const targets = layerSelection
       .map(existingKeyRefFor)
-      .filter((ref): ref is string => hasMappingContent(ref));
-    if (targets.length > 0) setPendingMappingDelete(targets);
+      .filter((ref): ref is string => hasLayerContent(ref));
+    if (targets.length > 0) setPendingLayerDelete(targets);
   }
 
-  async function confirmMappingDelete() {
-    const targets = pendingMappingDelete;
-    setPendingMappingDelete(null);
+  async function confirmLayerDelete() {
+    const targets = pendingLayerDelete;
+    setPendingLayerDelete(null);
     if (!layer || !targets) return;
     let current = layer;
     for (const target of targets) {
@@ -306,14 +332,14 @@ export default function Composer({
   // if the destination isn't blank, same as a Paste would.
   async function applyMoveKey(source: string, dest: string) {
     if (!layer) return;
-    const current = hasMappingContent(dest) ? await clearKey(layer.id, dest) : layer;
+    const current = hasLayerContent(dest) ? await clearKey(layer.id, dest) : layer;
     const updated = await moveKey(current.id, source, dest);
     onChangePlugins(updated.plugins);
     onChangeKeyProperties(updated.key_properties);
   }
 
   function handleMoveKey(source: string, dest: string) {
-    if (hasMappingContent(dest)) {
+    if (hasLayerContent(dest)) {
       setPendingMove({ source, dest });
     } else {
       void applyMoveKey(source, dest);
@@ -329,30 +355,30 @@ export default function Composer({
     divideModalOpened,
     hasCellSelection: grid.hasCellSelection,
     hasDivisionSelection: grid.hasDivisionSelection,
-    canCopySelection: mode === "layout" ? grid.canCopySelection : canCopyMapping,
+    canCopySelection: mode === "layout" ? grid.canCopySelection : canCopyLayer,
     emptySelection: mode === "layout" ? grid.emptySelection : null,
-    canPaste: mode === "layout" ? grid.canPaste : canPasteMapping,
+    canPaste: mode === "layout" ? grid.canPaste : canPasteLayer,
     undo,
     requestDeleteCells:
-      mode === "layout" ? grid.requestDeleteCells : requestDeleteMappingSelection,
+      mode === "layout" ? grid.requestDeleteCells : requestDeleteLayerSelection,
     requestDeleteDivisions:
-      mode === "layout" ? grid.requestDeleteDivisions : requestDeleteMappingSelection,
-    copySelectedCell: mode === "layout" ? grid.copySelectedCell : copyMappingSelection,
-    pasteToEmptyRow: mode === "layout" ? grid.pasteToEmptyRow : pasteMappingSelection,
+      mode === "layout" ? grid.requestDeleteDivisions : requestDeleteLayerSelection,
+    copySelectedCell: mode === "layout" ? grid.copySelectedCell : copyLayerSelection,
+    pasteToEmptyRow: mode === "layout" ? grid.pasteToEmptyRow : pasteLayerSelection,
     // The arrows move the selection around the grid's own geometry, which
-    // both modes share — so no Mapping counterpart to swap in, just a
-    // narrower idea of what's there to land on: Mapping renders nothing
-    // at all for a Space cell/division (`isMappingVisible`), so the
+    // both modes share — so no Layer counterpart to swap in, just a
+    // narrower idea of what's there to land on: Layer renders nothing
+    // at all for a Space cell/division (`isLayerVisible`), so the
     // arrows skip straight past those rather than moving the selection
     // somewhere invisible.
     selectAdjacent: (direction: -1 | 1) =>
       grid.selectAdjacent(
         direction,
-        mode === "layout" ? undefined : isMappingVisible,
+        mode === "layout" ? undefined : isLayerVisible,
       ),
   });
 
-  // Plain Tab toggles Layout/Mapping — Cmd/Ctrl+Tab is Resize's own
+  // Plain Tab toggles Layout/Layer — Cmd/Ctrl+Tab is Resize's own
   // shortcut instead (see `useLayoutShortcuts`), and both stay out of the
   // way of a modal's own fields, or typing in a text field, where Tab
   // must keep doing its normal job.
@@ -382,7 +408,7 @@ export default function Composer({
         return;
       }
       event.preventDefault();
-      onModeChange(mode === "layout" ? "mapping" : "layout");
+      onModeChange(mode === "layout" ? "layer" : "layout");
     }
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -403,32 +429,32 @@ export default function Composer({
   // collapsing it to just that one — see its own context-menu handlers),
   // so this only needs to open the menu itself, at the click. Fires in
   // either mode now (a cell/division's own menu content differs — see
-  // `renderMappingMenuItems` below for Mapping's).
+  // `renderLayerMenuItems` below for Layer's).
   function handleContextMenu(x: number, y: number, target: ContextMenuTarget) {
     setContextMenu({ x, y, kind: target.kind });
   }
 
-  // Mapping mode's own cell/division context menu content — Copy/Paste/
-  // Delete on the selection's Mapping content, in place of the old
+  // Layer mode's own cell/division context menu content — Copy/Paste/
+  // Delete on the selection's Layer content, in place of the old
   // Inspector "Actions" menu (Duplicate from/to, Move to, Clear all).
   // Shared between the "cell" and "division" branches below since the
-  // logic (`selectedMappingKeyRefs`, etc.) already covers both.
-  function renderMappingMenuItems() {
+  // logic (`selectedLayerKeyRefs`, etc.) already covers both.
+  function renderLayerMenuItems() {
     return (
       <>
         <Menu.Item
           leftSection={<MdContentCopy />}
           rightSection={<ShortcutHint>{MOD_KEY_LABEL}C</ShortcutHint>}
-          disabled={!canCopyMapping}
-          onClick={copyMappingSelection}
+          disabled={!canCopyLayer}
+          onClick={copyLayerSelection}
         >
           Copy
         </Menu.Item>
         <Menu.Item
           leftSection={<MdContentPaste />}
           rightSection={<ShortcutHint>{MOD_KEY_LABEL}V</ShortcutHint>}
-          disabled={!canPasteMapping}
-          onClick={pasteMappingSelection}
+          disabled={!canPasteLayer}
+          onClick={pasteLayerSelection}
         >
           Paste
         </Menu.Item>
@@ -437,9 +463,9 @@ export default function Composer({
           leftSection={<MdDelete />}
           rightSection={<ShortcutHint>⌫</ShortcutHint>}
           disabled={
-            !mappingSelection.some((target) => hasMappingContent(existingKeyRefFor(target)))
+            !layerSelection.some((target) => hasLayerContent(existingKeyRefFor(target)))
           }
-          onClick={requestDeleteMappingSelection}
+          onClick={requestDeleteLayerSelection}
         >
           Delete
         </Menu.Item>
@@ -447,81 +473,166 @@ export default function Composer({
     );
   }
 
+  // Nothing to compose until there's a layout to compose *into* — the
+  // display, both pickers and the mode switch all act on one, so they
+  // stand down to a single invitation to create the first
+  // (`LayoutEditor`, the same modal the pickers' own Add opens). The
+  // app's own mark and Settings stay put either way: neither belongs to
+  // a layout, and Settings has nowhere else left to be reached from.
+  const noLayouts = layoutsLoaded && entityEditors.layoutItems.length === 0;
+
+  // The same story one level down: a layout now starts with no layer at
+  // all (see `kbrd-api`'s own `Layout._write`), and there is nothing to
+  // compose on a layout with no layer in either mode — so the display,
+  // both pickers and the mode switch stand down exactly as they do above,
+  // to a single invitation to create the first one (`LayerEditor`, the
+  // same modal the Layer picker's own Add opens). `<Layer>` itself stays
+  // mounted behind it, only hidden: it's what loads the list this reads,
+  // and what the editor's own `onSaved` refreshes afterwards.
+  const noLayers = layersLoaded && entityEditors.layerItems.length === 0;
+
   return (
     <Box h="100%" style={{ position: "relative", overflow: "hidden" }}>
-      <Display
-        {...layoutSettings}
-        mode={mode}
-        rows={grid.rows}
-        cells={grid.cells}
-        onCellsChange={grid.setCells}
-        layer={layer}
-        onChangePlugins={onChangePlugins}
-        onCreateCell={grid.createCell}
-        onAssignLayoutPlugin={grid.assignLayoutPlugin}
-        onAssignLayoutPluginToDivision={grid.assignLayoutPluginToDivision}
-        onMoveCell={grid.moveCell}
-        onMoveKey={handleMoveKey}
-        mergeGroups={grid.mergeGroups}
-        selectedCellIndices={grid.selectedCellIndices}
-        onSelectCell={grid.selectCell}
-        onFocusCell={grid.focusCell}
-        onToggleCell={grid.toggleCellSelection}
-        selectedEmptyRow={grid.selectedEmptyRow}
-        onSelectEmpty={grid.selectEmptyRow}
-        selectedDivisionIndices={grid.selectedDivisionIndices}
-        onSelectDivision={grid.selectDivision}
-        onFocusDivision={grid.focusDivision}
-        onToggleDivision={grid.toggleDivisionSelection}
-        isDisplaySelected={grid.displaySelected}
-        onSelectDisplay={grid.selectDisplay}
-        onContextMenu={handleContextMenu}
-        resizeEnabled={resizeEnabled}
-        maxColumns={layout?.max_columns ?? null}
-      />
+      {noLayouts ? (
+        <EmptyState
+          className="composer-empty"
+          icon={<MdKeyboardAlt size={40} />}
+          title="No layout yet"
+          description="Create a layout to start composing your keyboard"
+        >
+          <EmptyState.Actions>
+            <Button
+              leftSection={<MdAdd size={16} />}
+              onClick={entityEditors.openAddLayout}
+            >
+              Create layout
+            </Button>
+          </EmptyState.Actions>
+        </EmptyState>
+      ) : (
+        <>
+        {noLayers ? (
+          <EmptyState
+            className="composer-empty"
+            icon={<MdLayers size={40} />}
+            title="No layer yet"
+            description={
+              <>
+                Create a layer to start
+                <br />
+                composing on this layout
+              </>
+            }
+          >
+            <EmptyState.Actions>
+              <Button
+                leftSection={<MdAdd size={16} />}
+                onClick={entityEditors.openAddLayer}
+              >
+                Create layer
+              </Button>
+            </EmptyState.Actions>
+          </EmptyState>
+        ) : (
+        <Display
+          {...layoutSettings}
+          mode={mode}
+          rows={grid.rows}
+          cells={grid.cells}
+          onCellsChange={grid.setCells}
+          layer={layer}
+          onChangePlugins={onChangePlugins}
+          onCreateCell={grid.createCell}
+          onAssignLayoutPlugin={grid.assignLayoutPlugin}
+          onAssignLayoutPluginToDivision={grid.assignLayoutPluginToDivision}
+          onMoveCell={grid.moveCell}
+          onMoveKey={handleMoveKey}
+          mergeGroups={grid.mergeGroups}
+          selectedCellIndices={grid.selectedCellIndices}
+          onSelectCell={grid.selectCell}
+          onFocusCell={grid.focusCell}
+          onToggleCell={grid.toggleCellSelection}
+          selectedEmptyRow={grid.selectedEmptyRow}
+          onSelectEmpty={grid.selectEmptyRow}
+          selectedDivisionIndices={grid.selectedDivisionIndices}
+          onSelectDivision={grid.selectDivision}
+          onFocusDivision={grid.focusDivision}
+          onToggleDivision={grid.toggleDivisionSelection}
+          isDisplaySelected={grid.displaySelected}
+          onSelectDisplay={grid.selectDisplay}
+          onContextMenu={handleContextMenu}
+          resizeEnabled={resizeEnabled}
+          maxColumns={layout?.max_columns ?? null}
+        />
+        )}
 
-      {layout && (
-        <Box
+        {layout && (
+          <Box
+            style={{
+              position: "absolute",
+              top: 20,
+              // Clear of the Inspector's own tab, which reaches into this
+              // area from the right edge while the panel is open (see
+              // `.inspector-tab` in App.css).
+              right: 40,
+              zIndex: 20,
+            }}
+          >
+            {/* One picker per mode, in the same spot: whichever entity
+                that mode actually edits. Layout mode's own is stateless
+                (see `LayoutPicker`) so it can simply come and go with the
+                mode, while `Layer` stays mounted either way — see its own
+                docblock on `hidden`. */}
+            {mode === "layout" && !noLayers && (
+              <LayoutPicker
+                layouts={entityEditors.layoutItems}
+                activeLayout={layout}
+                onSelect={onChangeLayout}
+                onAdd={entityEditors.openAddLayout}
+                onEdit={entityEditors.openEditLayout}
+                onDelete={entityEditors.requestDeleteLayout}
+              />
+            )}
+            <Layer
+              key={layout.id}
+              ref={layerMenuRef}
+              layoutId={layout.id}
+              onChange={onChangeLayer}
+              onAdd={entityEditors.openAddLayer}
+              onItemsChange={onLayerItemsChange}
+              // Layer only matters in Layer mode — see `Layer`'s own
+              // docblock on `hidden`. With no layer at all there's nothing
+              // to pick either way: the empty state's own button is the
+              // only way on from there.
+              hidden={mode !== "layer" || noLayers}
+            />
+          </Box>
+        )}
+
+        {!noLayers && (
+        <SegmentedControl
+          value={mode}
+          onChange={(value) => onModeChange(value === "layer" ? "layer" : "layout")}
+          data={[
+            { label: "Layout", value: "layout" },
+            { label: "Layer", value: "layer" },
+          ]}
+          color="green"
+          size="xs"
           style={{
             position: "absolute",
-            top: 20,
-            // Clear of the Inspector's own tab, which reaches into this
-            // area from the right edge while the panel is open (see
-            // `.inspector-tab` in App.css).
-            right: 40,
+            left: 20,
+            bottom: 20,
             zIndex: 20,
           }}
-        >
-          <Layer
-            key={layout.id}
-            ref={layerMenuRef}
-            layoutId={layout.id}
-            onChange={onChangeLayer}
-            onAdd={entityEditors.openAddLayer}
-            onItemsChange={onLayerItemsChange}
-            // Layer only matters in Mapping mode — see `Layer`'s own
-            // docblock on `hidden`.
-            hidden={mode !== "mapping"}
-          />
-        </Box>
+        />
+        )}
+        </>
       )}
 
-      <SegmentedControl
-        value={mode}
-        onChange={(value) => onModeChange(value === "mapping" ? "mapping" : "layout")}
-        data={[
-          { label: "Layout", value: "layout" },
-          { label: "Mapping", value: "mapping" },
-        ]}
-        color="green"
-        size="xs"
-        style={{
-          position: "absolute",
-          left: 20,
-          bottom: 20,
-          zIndex: 20,
-        }}
-      />
+      {/* The app's own mark, at the height of the pickers opposite it and
+          on the same margin the mode switch below keeps. */}
+      <img className="composer-logo" src={kbrdLogo} alt="KBRD" />
 
       <Group
         gap="md"
@@ -533,11 +644,11 @@ export default function Composer({
           zIndex: 20,
         }}
       >
-        {/* Layout-only — Mapping mode hides it (see `Display`'s own
+        {/* Layout-only — Layer mode hides it (see `Display`'s own
             `mode` check for the grip itself) since there's no grid
             structure left to resize there, only plugin content. Also
             toggled by Tab (see `useLayoutShortcuts`). */}
-        {mode === "layout" && (
+        {!noLayouts && !noLayers && mode === "layout" && (
           <Switch
             label="Resize"
             size="xs"
@@ -547,10 +658,13 @@ export default function Composer({
           />
         )}
 
-        {/* Shown in both modes, always to the right of Resize — a quick
+        {/* Shown in both modes, between Resize and Settings — a quick
             reference for whichever shortcuts the *current* mode actually
-            responds to (see `LAYOUT_SHORTCUTS`/`MAPPING_SHORTCUTS` above),
-            since Layout and Mapping each wire up their own, not shared. */}
+            responds to (see `LAYOUT_SHORTCUTS`/`LAYER_SHORTCUTS` above),
+            since Layout and Layer each wire up their own, not shared.
+            With no layout there is no display for any of them to act on,
+            so it stands down with everything else. */}
+        {!noLayouts && (
         <HoverCard width={240} shadow="md" position="top-end" withArrow offset={12}>
           <HoverCard.Target>
             <UnstyledButton
@@ -562,7 +676,7 @@ export default function Composer({
           </HoverCard.Target>
           <HoverCard.Dropdown>
             <Stack gap={6}>
-              {(mode === "layout" ? LAYOUT_SHORTCUTS : MAPPING_SHORTCUTS).map((shortcut) => (
+              {(mode === "layout" ? LAYOUT_SHORTCUTS : LAYER_SHORTCUTS).map((shortcut) => (
                 <Group key={shortcut.label} justify="space-between" wrap="nowrap" gap="md">
                   <Text size="xs">{shortcut.label}</Text>
                   <Kbd>{shortcut.keys}</Kbd>
@@ -571,6 +685,20 @@ export default function Composer({
             </Stack>
           </HoverCard.Dropdown>
         </HoverCard>
+        )}
+
+        {/* Shown whatever the mode, and whether or not there's a layout
+            at all — nothing about Settings belongs to one, and this is
+            the only place it opens from. */}
+        <Tooltip label="Settings" position="top" withArrow>
+          <UnstyledButton
+            aria-label="Settings"
+            onClick={onOpenSettings}
+            style={{ display: "flex", color: "var(--kbrd-color-contrast)" }}
+          >
+            <MdSettings size={22} />
+          </UnstyledButton>
+        </Tooltip>
       </Group>
 
       {/* One shared right-click context menu (see `Display`'s
@@ -705,7 +833,7 @@ export default function Composer({
                     )}
                   </>
                 )}
-                {mode === "mapping" && renderMappingMenuItems()}
+                {mode === "layer" && renderLayerMenuItems()}
               </>
             )}
 
@@ -788,7 +916,7 @@ export default function Composer({
                       )}
                     </>
                   )}
-                  {mode === "mapping" && renderMappingMenuItems()}
+                  {mode === "layer" && renderLayerMenuItems()}
                 </>
               )}
 
@@ -838,11 +966,11 @@ export default function Composer({
                 >
                   Delete
                 </Menu.Item>
-                {/* Layer only matters in Mapping mode — Render/Invoke
+                {/* Layer only matters in Layer mode — Render/Invoke
                     plugins attach to it, Layout plugins attach to the
                     Layout itself (see `Layer`'s own `hidden` prop, hiding
-                    its picker in the header the same way). */}
-                {mode === "mapping" && (
+                    its picker on the display the same way). */}
+                {mode === "layer" && (
                   <>
                     <Menu.Divider />
                     <Menu.Label>Layer</Menu.Label>
@@ -932,30 +1060,30 @@ export default function Composer({
         />
       )}
 
-      {/* Mapping's own equivalents — see the Copy/Paste/Delete/Move
+      {/* Layer's own equivalents — see the Copy/Paste/Delete/Move
           functions above. */}
-      {pendingMappingOverwrite && (
+      {pendingLayerOverwrite && (
         <Confirmation
           title="Overwrite"
-          message={`Overwrite Mapping content on ${pendingMappingOverwrite.length} key${pendingMappingOverwrite.length > 1 ? "s" : ""}?`}
+          message={`Overwrite Layer content on ${pendingLayerOverwrite.length} key${pendingLayerOverwrite.length > 1 ? "s" : ""}?`}
           onConfirm={() => {
-            const targets = pendingMappingOverwrite;
-            setPendingMappingOverwrite(null);
-            if (targets) void applyMappingPaste(targets);
+            const targets = pendingLayerOverwrite;
+            setPendingLayerOverwrite(null);
+            if (targets) void applyLayerPaste(targets);
           }}
-          onCancel={() => setPendingMappingOverwrite(null)}
+          onCancel={() => setPendingLayerOverwrite(null)}
         />
       )}
-      {pendingMappingDelete && (
+      {pendingLayerDelete && (
         <Confirmation
           title="Delete"
           message={
-            pendingMappingDelete.length > 1
-              ? `Delete the content of these ${pendingMappingDelete.length} elements?`
+            pendingLayerDelete.length > 1
+              ? `Delete the content of these ${pendingLayerDelete.length} elements?`
               : "Delete the content of this element?"
           }
-          onConfirm={() => void confirmMappingDelete()}
-          onCancel={() => setPendingMappingDelete(null)}
+          onConfirm={() => void confirmLayerDelete()}
+          onCancel={() => setPendingLayerDelete(null)}
         />
       )}
       {pendingMove && (

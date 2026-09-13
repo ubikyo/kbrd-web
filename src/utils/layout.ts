@@ -52,6 +52,32 @@ export function cellSizeMm(cell: GridCell, unitMm: number, gapMm: number) {
 }
 
 /**
+ * `cellSizeMm`'s width, read backwards: how many Units wide a footprint
+ * of `widthMm` is.
+ *
+ * What a merge's own size label is worked out from (see `Display`). A
+ * merge has no `unit` of its own — each member carries only its own
+ * share, and a group stacked across rows would add up to a number
+ * describing its height as much as its width — so the shape it actually
+ * occupies is asked instead, along the one axis a Unit means anything
+ * on. A group spanning several rows measures the widest of them, that
+ * being what its bounding box is.
+ *
+ * The `+ gapMm` is the trailing gap `cellSizeMm` leaves off: two 1U
+ * cells merged side by side span both keycaps *and* the gap that used to
+ * run between them, which is exactly 2 Units of row and comes back as 2.
+ *
+ * Rounded to the hundredth, the same place `useCellResize` snaps a Unit
+ * to, so a merge of quarter-Unit cells reads "0.75U" rather than a
+ * repeating decimal.
+ */
+export function unitsAcross(widthMm: number, unitMm: number, gapMm: number) {
+  const pitch = pitchMm(unitMm, gapMm);
+  if (pitch <= 0 || widthMm <= 0) return 0;
+  return Math.round(((widthMm + gapMm) / pitch) * 100) / 100;
+}
+
+/**
  * The display's full grid: `itemsY` rows, each an ordered list of cell ids
  * — empty until a plugin is actually dropped on that row (there is no
  * "default cell"; see `GridCell`'s docstring). `rowOverrides` holds
@@ -406,8 +432,8 @@ export type SelectionRef =
   | { kind: "division"; parentId: number; subId: number };
 
 /** Whether a cell/division with this Layout plugin can be selected at all
- * right now — everything, in Layout mode; only what Mapping actually
- * renders (`isMappingVisible`, i.e. not a Space), there. Passed in rather
+ * right now — everything, in Layout mode; only what Layer actually
+ * renders (`isLayerVisible`, i.e. not a Space), there. Passed in rather
  * than read off the plugin registry so this file stays pure geometry. */
 type NavigablePredicate = (typeId: string | null | undefined) => boolean;
 

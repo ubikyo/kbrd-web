@@ -29,6 +29,7 @@ import {
   removeMerge,
   rowOf,
   shareEdge,
+  unitsAcross,
 } from "./layout";
 import {
   createDivideGrid,
@@ -183,6 +184,28 @@ test("layoutRow places cells left to right at their own configured Unit, flush a
 
 test("layoutRow on an empty row returns no slots", () => {
   expect(layoutRow([], {}, 10, 3)).toEqual([]);
+});
+
+test("unitsAcross reads a footprint back as the Units it spans", () => {
+  // 16mm caps, 1mm between them: a 1U key is 16mm of plastic, and two of
+  // them merged span 33mm — both keycaps plus the gap that used to run
+  // between them, which is 2 Units of row.
+  expect(unitsAcross(16, 16, 1)).toBe(1);
+  expect(unitsAcross(33, 16, 1)).toBe(2);
+  // Exactly the inverse of the width `cellSizeMm` gives a cell.
+  const wide = cellSizeMm({ ...defaultGridCell(), unit: 6.25 }, 16, 1);
+  expect(unitsAcross(wide.width, 16, 1)).toBe(6.25);
+});
+
+test("unitsAcross rounds a run of quarter Units off the decimals", () => {
+  const three = cellSizeMm({ ...defaultGridCell(), unit: 0.75 }, 19.05, 0.5);
+
+  expect(unitsAcross(three.width, 19.05, 0.5)).toBe(0.75);
+});
+
+test("unitsAcross answers zero for a footprint with no width", () => {
+  expect(unitsAcross(0, 16, 1)).toBe(0);
+  expect(unitsAcross(16, 0, 0)).toBe(0);
 });
 
 test("maxUnitForCell caps a cell at the row's raw-width budget minus every other cell in its row", () => {
@@ -649,7 +672,7 @@ test("adjacentSelection enters a divided cell at the end it arrives from", () =>
   ).toEqual({ kind: "division", parentId: 2, subId: 0 });
 });
 
-test("adjacentSelection skips whatever isNavigable rules out — Mapping's own Space cells", () => {
+test("adjacentSelection skips whatever isNavigable rules out — Layer's own Space cells", () => {
   const rows = gridRows(1, { 0: [1, 2, 3, 4] });
   const cells: Record<number, GridCell> = {
     1: cellAt({ unit: 1, typeId: "kbrd.layout-key" }),

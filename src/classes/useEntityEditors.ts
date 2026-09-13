@@ -1,7 +1,6 @@
 import { useRef, useState } from "react";
 
 import type { LayerMenuHandle } from "../components/menu/Layer";
-import type { LayoutMenuHandle } from "../components/menu/Layout";
 import { deleteLayout, replaceLayout } from "../api/layouts";
 import { deleteLayer, replaceLayer } from "../api/layers";
 import type { LayerData } from "../types/layer";
@@ -18,15 +17,18 @@ import type { LayoutData } from "../types/layout";
 export function useEntityEditors(params: {
   layout: LayoutData | null;
   layer: LayerData | null;
-  // Every Layout/Layer that exists right now — just for "Replace with
-  // current", to offer every *other* one as a target (see
-  // `menu/Layout`/`menu/Layer`'s own `onItemsChange`).
+  // Every Layout/Layer that exists right now — read by "Replace with
+  // current", to offer every *other* one as a target, and by the pickers
+  // themselves (see `useLayouts` and `menu/Layer`'s own `onItemsChange`).
   layoutItems: LayoutData[];
   layerItems: LayerData[];
+  // Re-reads the layout list and re-selects afterwards — `useLayouts`'
+  // own, the counterpart of the handle `<Layer>` still exposes for its
+  // own list.
+  refreshLayouts: (preferredId?: number) => Promise<void>;
 }) {
-  const { layout, layer, layoutItems, layerItems } = params;
+  const { layout, layer, layoutItems, layerItems, refreshLayouts } = params;
 
-  const layoutMenuRef = useRef<LayoutMenuHandle>(null);
   const layerMenuRef = useRef<LayerMenuHandle>(null);
   const [layoutEditorOpened, setLayoutEditorOpened] = useState(false);
   const [editingLayout, setEditingLayout] = useState<LayoutData | null>(null);
@@ -114,7 +116,7 @@ export function useEntityEditors(params: {
     if (confirmDelete.kind === "layout") {
       await deleteLayout(confirmDelete.id);
       setConfirmDelete(null);
-      await layoutMenuRef.current?.refresh();
+      await refreshLayouts();
     } else {
       await deleteLayer(confirmDelete.id);
       setConfirmDelete(null);
@@ -160,7 +162,7 @@ export function useEntityEditors(params: {
       if (!layout) return;
       await replaceLayout(targetId, layout.id);
       setPendingReplace(null);
-      await layoutMenuRef.current?.refresh(targetId);
+      await refreshLayouts(targetId);
     } else {
       if (!layer) return;
       await replaceLayer(targetId, layer.id);
@@ -170,7 +172,6 @@ export function useEntityEditors(params: {
   }
 
   return {
-    layoutMenuRef,
     layerMenuRef,
     layoutEditorOpened,
     setLayoutEditorOpened,

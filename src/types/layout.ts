@@ -88,10 +88,10 @@ export type GridCell = {
   typeId: string | null;
   // That plugin instance's own config (e.g. LayoutKey's `keyMode`).
   typeConfig: Record<string, unknown>;
-  // Invoke/Display plugins attached in Mapping mode.
+  // Invoke/Display plugins attached in Layer mode.
   pluginIds: string[];
   // This cell's own stable reference for the real `KeyPlugin` records a
-  // Render/Invoke plugin dropped onto it in Mapping mode attaches to (see
+  // Render/Invoke plugin dropped onto it in Layer mode attaches to (see
   // `KeyPlugin.key_ref`) — unrelated to `id`/`nextCellId`, which is only
   // this synthetic grid's own bookkeeping and can be reused once a cell is
   // deleted. Generated fresh (`randomId()`) the moment a Layout
@@ -196,7 +196,7 @@ function cloneDivisionCell(cell: DivisionCell): DivisionCell {
  * Groups of grid indices merged into one key — replaces colspan/rowspan.
  * Each group is sorted; a cell not listed in any group is its own,
  * unmerged singleton. The group's *primary* (its smallest index) is the
- * one whose `GridCell` (type, config, Mapping plugins) the whole merged
+ * one whose `GridCell` (type, config, Layer plugins) the whole merged
  * shape shows and edits — see `primaryOf`/`groupOf` in `utils/layout`.
  */
 export type MergeGroups = number[][];

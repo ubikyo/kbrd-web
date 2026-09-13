@@ -160,6 +160,85 @@ body.debug * {
   border-top-right-radius: 0;
 }
 
+/* Both panels' tabs reach the bottom of their panel rather than stopping
+   at their content, so a tab's own content has the panel's full height to
+   lay itself out on. Each panel's scroll content is the flex column they
+   grow inside (see the `content` styles in `Inspector` and `Media`).
+
+   `1 0 auto` rather than `1`: they take whatever room is left over, but
+   are never squeezed below their own content — a full list still grows
+   past the panel and scrolls. An inactive `Tabs.Panel` carries Mantine's
+   own inline `display: none`, which wins over the `display` set here, so
+   only the tab on show is ever laid out. */
+.inspector-scroll .panel-tabs,
+.media-scroll .panel-tabs,
+.inspector-scroll .panel-tabs > .mantine-Tabs-panel,
+.media-scroll .panel-tabs > .mantine-Tabs-panel {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Every empty state in the app stands at the same height, whatever its
+   own panel keeps above it — the Media panel's category row, either
+   panel's tab strip, the Composer's nothing at all. Centring each one on
+   the room left *under* that chrome would put the three at three
+   different heights, so each is taken out of the flow and stretched over
+   its panel's full height instead: all of them then centre on the same
+   line, the window's own middle (which the Composer's own then shifts
+   off by a set amount — see below).
+
+   Each anchors to the nearest positioned ancestor, which is that full
+   height in every case: the Composer's own pane, and each side panel's
+   `ScrollArea` root (`position: relative`, `h="100%"`).
+
+   `.composer-empty` — no layout at all, or a layout with no layer (see
+   `Composer`). `.inspector-empty` — the Properties tab with nothing
+   selected, and a cell with nothing to configure (see
+   `LayoutCellProperties`); its 15px gutter is `px` in `Inspector`.
+   `.media-empty` — a category with nothing of the tab's kind in it, and
+   `.media-panel-empty` an empty library (both inside a drop frame, which
+   keeps its own size and stays in the flow — see `.media-dropzone`). */
+.composer-empty,
+.inspector-empty,
+.media-empty,
+.media-panel-empty {
+  position: absolute;
+  inset: 0;
+  justify-content: center;
+  /* Stretched over the panel's whole height, each of these lies across
+     the chrome above it as well — the Media panel's category row, either
+     panel's tab strip — and would swallow every click meant for those.
+     None of them holds anything to click but the Composer's own button,
+     which takes its own clicks back below; a drag still reaches the drop
+     frame an empty state sits in (see `.media-dropzone`) for the same
+     reason. */
+  pointer-events: none;
+}
+
+/* The Composer's own is the one empty state carrying a button, which
+   makes its block taller than the side panels' and so lifts its icon and
+   title above theirs even though all three boxes centre on the same line.
+   This nudge is what puts them back level by eye. */
+.composer-empty {
+  transform: translateY(4px);
+}
+
+/* Its one button ("Create layout" / "Create layer") wears the same set-
+   back grey as the two panel tabs above (see `.media-tab`), rather than
+   the theme's own filled colour: the invitation is chrome like they are,
+   not an accent. Mantine reads its fill off these variables, so setting
+   them keeps the button's own states (hover, focus ring) working. */
+.composer-empty .mantine-Button-root {
+  /* The one thing in any empty state that is clicked — see the rule
+     above, which stands the whole block out of the way of what it
+     covers. */
+  pointer-events: auto;
+  --button-bg: var(--kbrd-color-raised);
+  --button-hover: var(--kbrd-color-active);
+  --button-color: var(--kbrd-color-contrast);
+}
+
 .mantine-Input-input {
   background-color: var(--kbrd-color-body) !important;
   border: 1px solid var(--kbrd-border-color) !important;
@@ -193,47 +272,25 @@ body.debug * {
   padding: 0;
 }
 
-.navbar {
-  background-color: var(--kbrd-color-raised);
-  border-right: 1px solid var(--kbrd-border-color);
-  padding: var(--mantine-spacing-md);
+/* The app's own mark, top-left of the Composer — the app has no bar of
+   its own any more, so it stands in the display pane's own corner,
+   opposite the Layout/Layer pickers and at their height. A wide, flat
+   logo: its height is what's set, its width follows from that. */
+.composer-logo {
+  position: absolute;
+  top: 20px;
+  left: 50px;
+  z-index: 20;
+
+  display: block;
+  height: 22px;
+  width: auto;
 }
 
-.navbar-logo {
-  height: 60px;
-  margin-bottom: var(--mantine-spacing-md);
-  font-size: 24px;
-}
-
-.navbar-link {
-  width: 50px;
-  height: 50px;
-  border-radius: var(--mantine-radius-md);
-
-  display: flex;
-  align-items: center;
-  justify-content: center;
-
-  color: var(--kbrd-color-text);
-  transition:
-    background-color 120ms ease,
-    color 120ms ease;
-}
-
-.navbar-link:hover {
-  background-color: var(--kbrd-color-active);
-  color: var(--kbrd-color-contrast);
-}
-
-.navbar-link[data-active] {
-  background-color: var(--mantine-color-blue-filled);
-  color: var(--mantine-color-white);
-}
-
-/* The "+" (Add layout/layer) button at the bottom of the `Layout`/`Layer`
-   picker dropdowns — an `UnstyledButton` already sized to the dropdown's
-   full width/height, so a plain background-color hover fills it edge to
-   edge with no extra markup. */
+/* The "+" (Add layer) button at the bottom of the `Layer` picker's
+   dropdown — an `UnstyledButton` already sized to the dropdown's full
+   width/height, so a plain background-color hover fills it edge to edge
+   with no extra markup. */
 .picker-add-button:hover {
   background-color: var(--menu-item-hover, var(--kbrd-color-active));
 }
@@ -331,7 +388,7 @@ body.debug * {
 .media-tab,
 .inspector-tab {
   position: absolute;
-  top: 40px;
+  top: 60px;
   z-index: 30;
   padding: 12px 6px;
   /* Set back from the app's own ground rather than raised off it — the
@@ -388,17 +445,20 @@ body.debug * {
   }
 }
 
-/* The Media panel's drop frame, worn by its empty state alone: with
-   nothing in the library there are no squares to drop on, so the whole
-   panel takes it. The dashed rectangle sits 10px inside the panel, and
-   its own 1px border plus 4px of padding put the message on the 15px
-   gutter every other row of the panel starts at (10 + 1 + 4). The border
-   is declared transparent and only coloured while a file is over it, so
-   nothing shifts by a pixel when it appears.
+/* The Media panel's drop frame, worn by an empty state of either kind:
+   the whole panel's, with nothing in the library at all, and a tab's own,
+   under a category with nothing of that tab's kind in it. Neither has a
+   square to drop on, so what would be the list is the target instead. The
+   dashed rectangle sits 10px inside the panel, and its own 1px border
+   plus 4px of padding put the message on the 15px gutter every other row
+   of the panel starts at (10 + 1 + 4). The border is declared transparent
+   and only coloured while a file is over it, so nothing shifts by a pixel
+   when it appears.
 
-   It takes everything from under the category picker down to the bottom
-   of the window (hence the `content` height the panel gives its
-   ScrollArea) and centres its icon and message in that. */
+   It takes everything under it down to the bottom of the window — hence
+   the `content` height the panel gives its ScrollArea, and, for a tab's
+   own, the height its `Tabs.Panel` is grown to — and centres its icon and
+   message in that. */
 .media-dropzone {
   box-sizing: border-box;
   margin: 0 10px 10px;
@@ -416,6 +476,15 @@ body.debug * {
 
 .media-dropzone[data-dragging] {
   border-color: var(--kbrd-border-color);
+}
+
+/* The message inside a tab's own drop frame above (see `MediaList`, whose
+   tab wears one when the category has nothing of its kind in it) — placed
+   by the shared empty-state rule near the top of this file, not by the
+   frame. Its padding is what keeps the message off the dashed border, the
+   frame's own being only the 4px that sets the gutter. */
+.media-empty {
+  padding: 15px;
 }
 
 /* One tab's own list of squares. No room taken off any side: the squares
@@ -488,13 +557,14 @@ body.debug * {
   justify-content: center;
 }
 
-/* A file dragged over a media's own square replaces what it holds (see
-   `MediaTile`), so the square lights up while it's over it. The ground
-   does the telling now that a square is ruled rather than framed — its
-   own rule goes dashed with it, but a single line is not what carries
-   this. */
+/* A file dragged over a media's own square offers to replace what it
+   holds (see `MediaTile`), so the square frames itself while it's over
+   it — the same dashed frame an empty panel or an empty tab wears (see
+   `.media-dropzone`), rather than the single rule a square carries the
+   rest of the time. `border-box` above keeps the three sides it gains
+   off the square's own size, so nothing in the grid moves. */
 .media-tile[data-dragging] {
-  border-style: dashed;
+  border: 1px dashed var(--kbrd-border-color);
   background-color: var(--kbrd-color-active);
 }
 
@@ -652,3 +722,4 @@ body.debug * {
 .factory-display-case[data-selected] {
   border-color: var(--kbrd-color-selected);
 }
+

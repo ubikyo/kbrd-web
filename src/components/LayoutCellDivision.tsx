@@ -5,7 +5,7 @@ import type {
   ReactElement,
 } from "react";
 
-import { isMappingVisible } from "../plugins/registry";
+import { isLayerVisible } from "../plugins/registry";
 import type { KeyPlugin } from "../types/layer";
 import type { DivideGrid } from "../types/layout";
 import type { KeyLook } from "../utils/keyProperties";
@@ -18,7 +18,7 @@ import {
 import LayoutCell from "./LayoutCell";
 
 type Props = {
-  mode: "layout" | "mapping";
+  mode: "layout" | "layer";
   parentId: number;
   divide: DivideGrid;
   parentRect: CellRect;
@@ -26,7 +26,7 @@ type Props = {
   selectedCellIndices: number[];
   selectedDivisionIndices: number[];
   isDropTarget: (subId: number) => boolean;
-  // Mapping mode's own key-drag drop target (see `useKeyDrag`) — separate
+  // Layer mode's own key-drag drop target (see `useKeyDrag`) — separate
   // from `isDropTarget` above (a plugin dragged from the Inspector), see
   // `LayoutCell`'s own `isMoveTarget`. Both default to never-true so
   // Layout-mode callers (which don't have this concept) can omit them.
@@ -122,10 +122,10 @@ export default function LayoutCellDivision({
       isSelected,
       isDropTarget: isDropTarget(primary),
       isMoveTarget: isMoveTarget?.(primary) ?? false,
-      // Mapping mode only ever shows a division whose own Layout plugin
-      // opts into it (`mapping-visible`) — same rule as `Display`'s own
+      // Layer mode only ever shows a division whose own Layout plugin
+      // opts into it (`layer-visible`) — same rule as `Display`'s own
       // top-level cells, just per-division.
-      isVisible: mode === "layout" || isMappingVisible(divide.cells[primary]?.typeId),
+      isVisible: mode === "layout" || isLayerVisible(divide.cells[primary]?.typeId),
     };
   });
   const isHighlighted = (subId: number) =>
@@ -285,7 +285,7 @@ export default function LayoutCellDivision({
         onDragLeave={() => onDivisionDragLeave(parentId, primary)}
         onDrop={(event) => onDivisionDrop(parentId, divide, primary, event)}
         onPointerDown={
-          mode === "mapping" && onDivisionPointerDown
+          mode === "layer" && onDivisionPointerDown
             ? (event) => onDivisionPointerDown(parentId, primary, event)
             : undefined
         }

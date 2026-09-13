@@ -16,7 +16,6 @@ import LayoutEditor from "./components/modals/LayoutEditor";
 import type { FactoryLayout, LayoutData } from "./types/layout";
 
 import Composer from "./components/Composer";
-import Header from "./components/Header";
 import Inspector, { INSPECTOR_PANEL_WIDTH } from "./components/Inspector";
 import Media from "./components/Media";
 import Settings from "./components/modals/Settings";
@@ -30,6 +29,7 @@ import type { LayerData } from "./types/layer";
 import { useDisplayGrid } from "./classes/useDisplayGrid";
 import { useDisplaySettings } from "./classes/useDisplaySettings";
 import { useEntityEditors } from "./classes/useEntityEditors";
+import { useLayouts } from "./classes/useLayouts";
 import {
   loadInspectorPanel,
   loadMediaPanel,
@@ -47,11 +47,22 @@ const FACTORY_LAYOUT_AUTOSAVE_MS = 600;
 
 export default function App() {
   const [layout, setLayout] = useState<LayoutData | null>(null);
-  // Every Layout/Layer that currently exists — fed by `<Layout>`/`<Layer>`'s
-  // own `onItemsChange`, read only by `useEntityEditors`' "Replace with
-  // current" picker.
-  const [layoutItems, setLayoutItems] = useState<LayoutData[]>([]);
+  // Every Layer of the current layout — fed by `<Layer>`'s own
+  // `onItemsChange`, read by `useEntityEditors`' "Replace with current"
+  // picker. Its Layout counterpart belongs to `useLayouts` below.
   const [layerItems, setLayerItems] = useState<LayerData[]>([]);
+  // Whether `layerItems` has actually been fetched for the current
+  // layout yet — an empty list means "this layout has no layer" only
+  // once it has, and `<Composer>`'s own empty state hangs on that
+  // difference. Reset on every real layout switch below, set again by
+  // `<Layer>`'s next `onItemsChange`.
+  const [layersLoaded, setLayersLoaded] = useState(false);
+
+  const handleLayerItemsChange = useCallback((items: LayerData[]) => {
+    setLayerItems(items);
+    setLayersLoaded(true);
+  }, []);
+
   const { layoutSettings, setLayoutSettings, saveDisplaySettings } =
     useDisplaySettings();
 
@@ -86,22 +97,23 @@ export default function App() {
   );
 
   // Which form the Inspector's plugin editors show — see `mode` on
-  // `Inspector`'s props and each plugin's `LayoutEditor`/`MappingEditor`.
-  const [mode, setMode] = useState<"layout" | "mapping">("layout");
+  // `Inspector`'s props and each plugin's `LayoutEditor`/`LayerEditor`.
+  const [mode, setMode] = useState<"layout" | "layer">("layout");
 
-  // Settings' Preferences tab — "On open, open". Mapping mode only means
+  // Settings' Preferences tab — "On open, open". Layer mode only means
   // anything once a layout is actually loaded (it maps *that* layout's
-  // keys), so "Mapping" is applied on the first layout to arrive rather
+  // keys), so "Layer" is applied on the first layout to arrive rather
   // than at mount, and only ever once: switching layouts afterwards must
   // not drag the user back out of whichever mode they've since picked.
   const [startupMode, setStartupMode] = useState<StartupMode>(loadStartupMode);
   const startupModeApplied = useRef(false);
 
   const [inspectorTab, setInspectorTab] = useState<string | null>("plugins");
-  // Settings' Developer tab — on for now, while the app is still being
-  // built: it restores plain HTML page behaviour (native context menu,
-  // selectable text) that the app otherwise suppresses.
-  const [debug, setDebug] = useState(true);
+  // Settings' Developer tab — off by default: turning it on restores
+  // plain HTML page behaviour (native context menu, selectable text) that
+  // the app otherwise suppresses, which is a thing to reach for while
+  // working on the app rather than the way it should open.
+  const [debug, setDebug] = useState(false);
   // Mirrors `layer` for the autosave effect below, so that effect only
   // has to depend on the grid state that actually triggers a save — not
   // on `layer` itself, which the save's own response also updates.
@@ -131,7 +143,7 @@ export default function App() {
   // stays lifted here rather than inside either one.
   const grid = useDisplayGrid({ layoutSettings, gridItemsY });
 
-  // Mapping mode's own "which key" for the Inspector's Plugins/Properties
+  // Layer mode's own "which key" for the Inspector's Plugins/Properties
   // tabs — whichever cell/division `<Composer>`'s `<Display>` has
   // selected (the same grid both modes share — see `Display`'s own
   // docblock), read by its own `keyRef` (see `GridCell.keyRef`): that's
@@ -139,7 +151,7 @@ export default function App() {
   // not the cell's own synthetic id. `null` while nothing selected has one
   // yet (an untyped cell, or a fresh save from before this field existed).
   useEffect(() => {
-    if (mode !== "mapping") return;
+    if (mode !== "layer") return;
     setSelectedKey(
       grid.divisionSelection?.cell.keyRef ?? grid.layoutSelection?.cell.keyRef ?? null,
     );
@@ -151,17 +163,16 @@ export default function App() {
   useEffect(() => {
     if (startupModeApplied.current || layout == null) return;
     startupModeApplied.current = true;
-    if (startupMode === "mapping") setMode("mapping");
+    if (startupMode === "layer") setMode("layer");
   }, [layout, startupMode]);
-
-  const entityEditors = useEntityEditors({ layout, layer, layoutItems, layerItems });
 
   const changeLayout = useCallback(
     (value: LayoutData | null) => {
       // The Layout editor's `onSaved` refreshes this same layout's own row
       // (e.g. a changed Max width/height, Caps size…) by re-fetching it, not
-      // by switching to a different one — `Layout.refresh(id)` calls this
-      // with a freshly-fetched object that still carries the same `id`. The
+      // by switching to a different one — `useLayouts`' own `refresh(id)`
+      // calls this with a freshly-fetched object that still carries the
+      // same `id`. The
       // active layer and everything on the display must survive that; only
       // an actual switch (a different id, or none at all) should wipe them.
       const isSameLayout =
@@ -183,6 +194,8 @@ export default function App() {
       if (isSameLayout) return;
       setLayer(null);
       layerRef.current = null;
+      setLayerItems([]);
+      setLayersLoaded(false);
       setSelectedKey(null);
       // The layer `<Layer>` activates next (see its effect) seeds
       // these back in via `changeLayer` — this is just the gap between
@@ -206,10 +219,26 @@ export default function App() {
     [],
   );
 
+  // Every layout there is, plus the one reload every add/edit/delete/
+  // replace of them goes through — see `useLayouts`, which took this over
+  // from the Layout picker the app's old top bar used to hold.
+  const layouts = useLayouts({
+    currentId: layout?.id ?? null,
+    onSelect: changeLayout,
+  });
+
+  const entityEditors = useEntityEditors({
+    layout,
+    layer,
+    layoutItems: layouts.items,
+    layerItems,
+    refreshLayouts: layouts.refresh,
+  });
+
   // The browser's own right-click context menu is never wanted anywhere
   // in the app — `<Composer>` already shows its own for a cell/division/
   // row/display in Layout mode, but this covers every other case too
-  // (Mapping mode, the header, the Inspector panel, Settings…), where
+  // (Layer mode, the navbar, the Inspector panel, Settings…), where
   // nothing else calls `preventDefault()` on it. Debug mode (Settings'
   // Developer tab) is the one exception: the page then behaves like any
   // other HTML page, native context menu and all, so the browser's own
@@ -269,15 +298,7 @@ export default function App() {
   }, [grid.cells, grid.rowOverrides, grid.mergeGroups, grid.skipAutosaveRef]);
 
   return (
-    <AppShell header={{ height: 64 }} padding={0}>
-      <Header
-        layoutMenuRef={entityEditors.layoutMenuRef}
-        onLayoutChange={changeLayout}
-        onAddLayout={entityEditors.openAddLayout}
-        onLayoutItemsChange={setLayoutItems}
-        onOpenSettings={() => setSettingsOpened(true)}
-      />
-
+    <AppShell padding={0}>
       <Settings
         opened={settingsOpened}
         onClose={() => setSettingsOpened(false)}
@@ -317,7 +338,7 @@ export default function App() {
           style={{
             position: "relative",
             display: "flex",
-            height: "calc(100vh - 64px)",
+            height: "100vh",
             overflow: "hidden",
           }}
         >
@@ -352,21 +373,25 @@ export default function App() {
               mode={mode}
               onModeChange={(next) => {
                 // A selection made in one mode has no meaning in the
-                // other — Layout and Mapping share only cell/division
+                // other — Layout and Layer share only cell/division
                 // display, position and type, not their own content.
                 grid.clearSelection();
                 setMode(next);
               }}
               layout={layout}
+              layoutsLoaded={layouts.loaded}
+              onChangeLayout={changeLayout}
               layer={layer}
+              layersLoaded={layersLoaded}
               grid={grid}
               entityEditors={entityEditors}
               settingsOpened={settingsOpened}
+              onOpenSettings={() => setSettingsOpened(true)}
               onChangePlugins={changePlugins}
               onChangeKeyProperties={changeKeyProperties}
               layerMenuRef={entityEditors.layerMenuRef}
               onChangeLayer={changeLayer}
-              onLayerItemsChange={setLayerItems}
+              onLayerItemsChange={handleLayerItemsChange}
             />
           </Box>
           <Box
@@ -385,6 +410,7 @@ export default function App() {
                 selectedKey={selectedKey}
                 selectedKeyTypeId={selectedKeyTypeId}
                 hasLayout={layout != null}
+                layoutsLoaded={layouts.loaded}
                 mode={mode}
                 layoutSelection={
                   grid.divisionSelection
@@ -413,7 +439,7 @@ export default function App() {
           onClose={() => entityEditors.setLayoutEditorOpened(false)}
           onSaved={(id) => {
             entityEditors.setLayoutEditorOpened(false);
-            void entityEditors.layoutMenuRef.current?.refresh(id);
+            void layouts.refresh(id);
           }}
         />
       )}

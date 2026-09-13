@@ -4,6 +4,7 @@ import {
   ActionIcon,
   Box,
   Button,
+  EmptyState,
   Group,
   Modal,
   ScrollArea,
@@ -15,6 +16,8 @@ import {
 import {
   MdDelete,
   MdDragIndicator,
+  MdExtension,
+  MdHighlightAlt,
   MdUnfoldLess,
   MdUnfoldMore,
 } from "react-icons/md";
@@ -91,14 +94,18 @@ type Props = {
   // for the system property row's own label, without a `layout`/geometry
   // lookup (see `App`'s own `selectedKeyTypeId`).
   selectedKeyTypeId: string | null;
-  // Whether any layout is loaded at all — just for the empty-state
-  // message below ("Create a layer"/"Create a layout"), not a real
-  // `LayoutData` consumer.
+  // Whether any layout is loaded at all — what the panel stands down to
+  // its own empty state on, not a real `LayoutData` consumer.
   hasLayout: boolean;
+  // And whether the list has actually been fetched yet (see `App`): until
+  // it has, `hasLayout` is false only because nothing has arrived, and
+  // standing down on that would flash the empty state on every load. Same
+  // guard the Composer's own empty states keep.
+  layoutsLoaded: boolean;
   // Which form each plugin instance below shows: its Layout (placement) or
-  // Mapping (everything else) editor — see `kbrd-plugins`' per-plugin
-  // `LayoutEditor`/`MappingEditor` exports.
-  mode: "layout" | "mapping";
+  // Layer (everything else) editor — see `kbrd-plugins`' per-plugin
+  // `LayoutEditor`/`LayerEditor` exports.
+  mode: "layout" | "layer";
   // The `<Display>` grid cell (or division of a divided one) currently
   // selected, only set in Layout mode — `cell` only needs to carry the
   // plugin-facing fields `LayoutCellProperties` actually reads, the same
@@ -116,7 +123,7 @@ type Props = {
 
 /**
  * Layout-mode Properties tab content for a selected `<Display>` cell, or
- * Mapping-mode's Plugins/Properties tabs for `selectedKey` — see
+ * Layer-mode's Plugins/Properties tabs for `selectedKey` — see
  * `useKeyInspector` for everything behind the latter (which plugins/
  * properties a key has, and every mutation on them).
  *
@@ -135,6 +142,7 @@ export default function Inspector({
   onChange,
   selectedKeyTypeId,
   hasLayout,
+  layoutsLoaded,
   mode,
   layoutSelection,
   onLayoutCellChange,
@@ -176,7 +184,7 @@ export default function Inspector({
   // (`kbrd.render-key`), it's just not one that can be attached or
   // detached — see its manifest's `deletable` and `isDeletable`.
   const systemPlugin = pluginById(SYSTEM_PLUGIN_ID);
-  const SystemEditor = systemPlugin?.MappingEditor;
+  const SystemEditor = systemPlugin?.LayerEditor;
   const systemPluginDeletable = systemPlugin ? isDeletable(systemPlugin) : true;
   // "add"/"edit" while the States menu's own modal is open, `null`
   // otherwise — see `StateEditor`.
@@ -195,9 +203,9 @@ export default function Inspector({
   function renderInstance(item: KeyPlugin) {
     const plugin = pluginById(item.plugin_id);
     if (!plugin) return null;
-    // This branch of the Properties tab only renders in Mapping
+    // This branch of the Properties tab only renders in Layer
     // mode — see the `mode === "layout"` split above.
-    const Editor = plugin.MappingEditor;
+    const Editor = plugin.LayerEditor;
     const summary = pluginSummary(item);
     const definedConfig = stateConfig(item.config, activeState);
     const currentConfig = {
@@ -486,11 +494,44 @@ export default function Inspector({
         verticalScrollbarPosition="left"
         // Mantine insets the thumb by a fifth of the scrollbar's size; at
         // 1px that would leave it sub-pixel, so the track keeps none.
-        styles={{ scrollbar: { padding: 0, zIndex: 2 } }}
+        styles={{
+          scrollbar: { padding: 0, zIndex: 2 },
+          // Mantine lays the content out as a table, which is only as tall
+          // as it needs to be; the tabs below have to reach the bottom of
+          // the panel instead, so the Properties tab's empty state can be
+          // centred on the panel's own height (see `.inspector-scroll` in
+          // App.css). A *minimum* rather than a fixed height, so a full
+          // list still grows past it and scrolls.
+          content: {
+            minHeight: "100%",
+            display: "flex",
+            flexDirection: "column",
+          },
+        }}
       >
         {/* The room above the tabs is the panel's, not its container's, so
             the scrollbar runs the full height of the Inspector rather than
             starting at the tabs. It scrolls away with the content. */}
+        {layoutsLoaded && !hasLayout ? (
+          // Neither tab has anything to show without a layout — Plugins
+          // has nothing to drag onto, Properties nothing to select — so
+          // the strip goes with them and the panel stands down to a
+          // single line, the way the Composer beside it does (see its own
+          // "No layout yet").
+          <EmptyState
+            className="inspector-empty"
+            px={15}
+            icon={<MdExtension size={28} />}
+            title="No layout yet"
+            description={
+              <>
+                Create a layout
+                <br />
+                to add plugins.
+              </>
+            }
+          />
+        ) : (
         <Tabs
           pt={40}
           className="panel-tabs"
@@ -505,14 +546,10 @@ export default function Inspector({
 
           <Tabs.Panel value="plugins" pb="lg">
             {!layer ? (
-              <Text c="dimmed">
-                {hasLayout
-                  ? "Create a layer to add plugins."
-                  : "Create a layout to add plugins."}
-              </Text>
+              <Text c="dimmed">Create a layer to add plugins.</Text>
             ) : (
               // One labelled group per category, no accordion: with two of
-              // them (Display and Invoke in Mapping mode, Layout alone in
+              // them (Display and Invoke in Layer mode, Layout alone in
               // Layout mode) there is nothing to fold away, and a list you
               // drag *from* is worth having permanently in view.
               // `pluginCategories` is derived from the plugins themselves,
@@ -603,9 +640,19 @@ export default function Inspector({
           <Tabs.Panel value="properties" pb="lg">
             {mode === "layout" ? (
               !layoutSelection ? (
-                <Text size="sm" c="dimmed" px={15} pt={25}>
-                  No item selected
-                </Text>
+                <EmptyState
+                  className="inspector-empty"
+                  px={15}
+                  icon={<MdHighlightAlt size={28} />}
+                  title="No item selected"
+                  description={
+                    <>
+                      Select a cell to
+                      <br />
+                      edit its properties
+                    </>
+                  }
+                />
               ) : (
                 <LayoutCellProperties
                   cell={layoutSelection.cell}
@@ -615,9 +662,19 @@ export default function Inspector({
                 />
               )
             ) : !selectedKey ? (
-              <Text size="sm" c="dimmed" px={15} pt={25}>
-                No item selected
-              </Text>
+              <EmptyState
+                className="inspector-empty"
+                px={15}
+                icon={<MdHighlightAlt size={28} />}
+                title="No item selected"
+                description={
+                  <>
+                    Select a cell to
+                    <br />
+                    edit its properties
+                  </>
+                }
+              />
             ) : (
               <Stack
                 key={selectedKey}
@@ -715,6 +772,7 @@ export default function Inspector({
             )}
           </Tabs.Panel>
         </Tabs>
+        )}
 
         <Modal
           opened={deleting !== null}
