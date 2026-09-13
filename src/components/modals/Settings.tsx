@@ -24,6 +24,7 @@ import {
   MdStraighten,
   MdTune,
   MdUpload,
+  MdWifi,
 } from "react-icons/md";
 
 import {
@@ -36,6 +37,8 @@ import { BACKUP_DOWNLOAD_URL, restoreBackup } from "../../api/backup";
 import { getStorage, type StoragePartition } from "../../api/storage";
 import type { LayoutSettings } from "../../types/layout";
 import Confirmation from "./Confirmation";
+import FieldRow from "../settings/FieldRow";
+import Network from "../settings/Network";
 import type {
   ColorSchemePreference,
   PanelState,
@@ -62,28 +65,6 @@ const COLOR_SCHEMES: { value: ColorSchemePreference; label: string }[] = [
 
 const isColorScheme = (value: string | null): value is ColorSchemePreference =>
   COLOR_SCHEMES.some((option) => option.value === value);
-
-type FieldRowProps = {
-  label: string;
-  children: React.ReactNode;
-};
-
-/** Same 40/60 label/control split for every field in this modal. */
-function FieldRow({ label, children }: FieldRowProps) {
-  return (
-    <Box
-      style={{
-        display: "grid",
-        gridTemplateColumns: "minmax(0, 4fr) minmax(0, 6fr)",
-        columnGap: "var(--mantine-spacing-md)",
-        alignItems: "center",
-      }}
-    >
-      <Text size="sm">{label}</Text>
-      {children}
-    </Box>
-  );
-}
 
 /** One side panel's own "starts open or closed" row — the Media and
  * Inspector panels take the same control (see `PanelState`). */
@@ -414,6 +395,9 @@ export default function Settings({
             <Tabs.Tab value="display" leftSection={<MdStraighten size={16} />}>
               Display
             </Tabs.Tab>
+            <Tabs.Tab value="network" leftSection={<MdWifi size={16} />}>
+              Network
+            </Tabs.Tab>
             <Tabs.Tab value="storage" leftSection={<MdSdStorage size={16} />}>
               Storage
             </Tabs.Tab>
@@ -540,6 +524,17 @@ export default function Settings({
               <DisplayRow label="Resolution (px)" value={resolutionValue} />
               <DisplayRow label="DPI (x / y)" value={dpiValue} />
             </Stack>
+          </Tabs.Panel>
+
+          <Tabs.Panel
+            value="network"
+            style={{ overflowY: "auto", padding: 0, paddingLeft: 40 }}
+          >
+            {/* Polls, scans and applies only while it is the tab on
+                screen — a scan takes the radio for several seconds, and
+                nothing about it belongs to a modal nobody is looking
+                at. */}
+            <Network active={opened && tab === "network"} />
           </Tabs.Panel>
 
           <Tabs.Panel
