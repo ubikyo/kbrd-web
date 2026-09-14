@@ -951,6 +951,33 @@ body.debug * {
   margin-bottom: var(--setup-label-gap);
 }
 
+/* The fields' own edges, quieter here than anywhere else in the app: the
+   hairline grey the rules and separators are drawn in rather than the
+   border one. The wizard is the one place a field stands on the bare page
+   instead of inside a modal or a panel, and at that size a full border
+   round every box is the loudest thing on the step. A step below the
+   strip of steps above them and a step above its ground — `sunken` itself
+   was tried here and all but vanished against the page.
+
+   Three things this rule has to get past, hence its shape:
+
+    - `!important`, because the app-wide `.mantine-Input-input` default
+      near the top of this file is `!important` too; a normal declaration
+      never reaches the input however specific it is.
+    - `border-color` rather than `border`, so an `unstyled` input inside
+      the wizard keeps the `border: none` its own rule gives it — that one
+      is as specific as this and earlier in the file, so a shorthand here
+      would put its border back.
+    - a colour rather than `--input-bd`: Mantine declares that variable on
+      the input itself, per variant, so a value set out here would never
+      be the one it reads.
+
+   Scoped to `.setup-page` and no further up on purpose — this is the
+   wizard's own look, not a change to how the app draws a field. */
+.setup-page .mantine-Input-input {
+  border-color: var(--kbrd-rule-color) !important;
+}
+
 .setup-body {
   flex: 1;
   min-height: 0;
@@ -1051,7 +1078,11 @@ body.debug * {
   /* One row, and the unit a list's own height is counted in. */
   --setup-row-height: 38px;
 
-  border: 1px solid var(--kbrd-border-color);
+  /* The same hairline grey the wizard's fields are edged in (see
+     `.setup-page .mantine-Input-input`) — this frame is the Wi-Fi step's
+     field, standing opposite the password box, and the two read as one
+     pair only if they are drawn in one colour. */
+  border: 1px solid var(--kbrd-rule-color);
   border-radius: var(--mantine-radius-sm);
   overflow: hidden;
 }
@@ -1066,7 +1097,7 @@ body.debug * {
    rows above it — the same question, answered by hand: a hidden network
    on one step, a screen that isn't listed on the next. */
 .setup-other {
-  border-top: 1px solid var(--kbrd-border-color);
+  border-top: 1px solid var(--kbrd-rule-color);
   min-height: var(--setup-row-height);
   padding: 0 10px;
 }
