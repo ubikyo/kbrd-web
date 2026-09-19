@@ -263,6 +263,11 @@ export default function WifiPicker({ draft, onChange, onDevice }: Props) {
           // it level with the list opposite. The radius comes from
           // `.setup-columns`, alongside.
           value={draft.passphrase}
+          // Only what is wrong with what was typed: a key too short or
+          // too long for WPA2. An empty field is not marked at all —
+          // nothing has been got wrong yet, and Next being out of reach
+          // is what says the step isn't done (see
+          // `isWifiCompleteWithKey`).
           error={errors.passphrase}
           onChange={(event) =>
             onChange({

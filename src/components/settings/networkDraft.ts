@@ -154,6 +154,26 @@ export function isWifiComplete(draft: NetworkDraft): boolean {
   return networkDraftErrors(draft).passphrase === undefined;
 }
 
+/**
+ * The same, and a key that is actually there.
+ *
+ * An empty passphrase field means two different things in the two places
+ * this draft is edited. In Settings it means "keep the one the device
+ * already holds", which is why the check above lets it through — the key
+ * is never sent back out to be shown, so an untouched field is the only
+ * way to say "leave it". On a first run there is no such key: nothing has
+ * been configured, so an empty field is an unanswered question and the
+ * wizard has no business going on to the next step (see
+ * `setup/SetupWizard`).
+ *
+ * An open network is not a case this takes: KBRD joins one network, and
+ * the key is asked for outright rather than offered.
+ */
+export function isWifiCompleteWithKey(draft: NetworkDraft): boolean {
+  if (draft.passphrase.length < PASSPHRASE_MIN) return false;
+  return isWifiComplete(draft);
+}
+
 /** Addressing KBRD-API would take — always true under DHCP. */
 export function isIpv4Complete(draft: NetworkDraft): boolean {
   return ipv4Problems(draft).length === 0;

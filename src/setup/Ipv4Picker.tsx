@@ -7,11 +7,12 @@ import {
   Text,
   TextInput,
 } from "@mantine/core";
-import { MdError } from "react-icons/md";
 
+import ErrorMark from "./ErrorMark";
 import { gatewayFor } from "../components/settings/ipv4";
 import {
-  ipv4Problems,
+  IPV4_FIELDS,
+  networkDraftErrors,
   type NetworkDraft,
 } from "../components/settings/networkDraft";
 
@@ -35,13 +36,6 @@ type Props = {
  * indents — "Netmask" is the long one and sets it. */
 const PREFIX_WIDTH = 85;
 
-/** The mark a field in error carries, and the one the message below the
- * fields repeats — the same glyph in both places, so the line and the
- * rows it is about are read as one thing. */
-function ErrorMark() {
-  return <MdError size={16} color="var(--mantine-color-red-6)" />;
-}
-
 /** One IPv4 field, named inside itself rather than above: five of these
  * stack, and a heading apiece would double the height of the column.
  *
@@ -57,10 +51,14 @@ function AddressField({
   label: string;
   value: string;
   onChange: (value: string) => void;
-  /** Still to be filled in, or filled in with something that isn't an
-   * address. Marked at the end of the row rather than by colouring
-   * anything: these fields are joined into one frame, and a red middle
-   * would cut it in half. */
+  /** Filled in with something that isn't an address. Marked at the end
+   * of the row rather than by colouring anything: these fields are
+   * joined into one frame, and a red middle would cut it in half.
+   *
+   * An empty field is not this. It is a question not yet answered, which
+   * the wizard says by leaving Next out of reach (see `isIpv4Complete`) —
+   * marking every box red the moment Static is picked would be the step
+   * telling the user off for not having filled it in yet. */
   invalid?: boolean;
 }) {
   return (
@@ -98,7 +96,12 @@ function AddressField({
  * `NetworkIpv4Fields`), which is the right shape there.
  */
 export default function Ipv4Picker({ draft, onChange }: Props) {
-  const problems = new Set(ipv4Problems(draft));
+  // What is wrong with what was typed, not what is missing:
+  // `networkDraftErrors` passes an empty field, which is the distinction
+  // this step is marked on (`ipv4Problems`, which the wizard gates Next
+  // with, counts both).
+  const errors = networkDraftErrors(draft);
+  const malformed = IPV4_FIELDS.some(({ key }) => errors[key] !== undefined);
 
   /** The address and the mask are what a gateway is read off, so a change
    * to either carries it along — until the two say something a router
@@ -116,6 +119,21 @@ export default function Ipv4Picker({ draft, onChange }: Props) {
         label="Addressing"
         aria-label="Addressing"
         allowDeselect={false}
+        classNames={{
+          input: "setup-select-input",
+          dropdown: "setup-select-dropdown",
+        }}
+        comboboxProps={{
+          // Flush against the field: the two are drawn as one box when
+          // it is open (see `.setup-select-dropdown` in App.css), so
+          // there is nothing to stand off.
+          offset: 0,
+          // And always below it. The menu is two rows and the field is
+          // near the top of the panel, so there is no room it is going
+          // to want; left free to flip it would open upwards and the
+          // squared-off corners would be at the wrong end.
+          middlewares: { flip: false, shift: true },
+        }}
         data={[
           { value: "dhcp", label: "DHCP" },
           { value: "static", label: "Static" },
@@ -144,19 +162,19 @@ export default function Ipv4Picker({ draft, onChange }: Props) {
                 label="Address"
                 value={draft.address}
                 onChange={(value) => changeNetwork({ address: value })}
-                invalid={problems.has("address")}
+                invalid={errors.address !== undefined}
               />
               <AddressField
                 label="Netmask"
                 value={draft.netmask}
                 onChange={(value) => changeNetwork({ netmask: value })}
-                invalid={problems.has("netmask")}
+                invalid={errors.netmask !== undefined}
               />
               <AddressField
                 label="Gateway"
                 value={draft.gateway}
                 onChange={(value) => onChange({ gateway: value })}
-                invalid={problems.has("gateway")}
+                invalid={errors.gateway !== undefined}
               />
             </Box>
 
@@ -172,24 +190,27 @@ export default function Ipv4Picker({ draft, onChange }: Props) {
                   label="DNS 1"
                   value={draft.dns1}
                   onChange={(value) => onChange({ dns1: value })}
-                  invalid={problems.has("dns1")}
+                  invalid={errors.dns1 !== undefined}
                 />
                 <AddressField
                   label="DNS 2"
                   value={draft.dns2}
                   onChange={(value) => onChange({ dns2: value })}
-                  invalid={problems.has("dns2")}
+                  invalid={errors.dns2 !== undefined}
                 />
               </Box>
             </Box>
 
             {/* The fields say which of them they are; this says what to
-                do about it, under the same mark they carry. */}
-            {problems.size > 0 && (
-              <Group gap={6} align="center" wrap="nowrap">
+                do about it, under the same mark they carry — so it comes
+                and goes with those marks rather than with the step being
+                unfinished, which would put a line here asking for a
+                correction with nothing marked to correct. */}
+            {malformed && (
+              <Group gap={6} align="flex-start" wrap="nowrap">
                 <ErrorMark />
                 <Text size="sm" c="red">
-                  Please correct the above settings.
+                  Please correct the settings.
                 </Text>
               </Group>
             )}

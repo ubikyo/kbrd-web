@@ -5,6 +5,8 @@ import {
   IPV4_FIELDS,
   ipv4Problems,
   isNetworkDraftComplete,
+  isWifiComplete,
+  isWifiCompleteWithKey,
   networkBody,
   networkDraftErrors,
   networkDraftFrom,
@@ -126,6 +128,29 @@ describe("isNetworkDraftComplete", () => {
 
   it("asks for none of them under DHCP", () => {
     expect(isNetworkDraftComplete({ ...dhcp, mode: "dhcp" })).toBe(true);
+  });
+});
+
+describe("isWifiCompleteWithKey", () => {
+  it("takes the same draft the settings form would", () => {
+    expect(isWifiCompleteWithKey(dhcp)).toBe(true);
+  });
+
+  it("refuses the empty passphrase that means \"keep the saved key\"", () => {
+    const blank = { ...dhcp, passphrase: "", passphraseTouched: false };
+    // Settings takes it: there, an untouched field is how the device's
+    // own key is left alone.
+    expect(isWifiComplete(blank)).toBe(true);
+    // A first run has no such key to leave alone.
+    expect(isWifiCompleteWithKey(blank)).toBe(false);
+  });
+
+  it("refuses a key too short for WPA2, as the shared rule does", () => {
+    expect(isWifiCompleteWithKey({ ...dhcp, passphrase: "short" })).toBe(false);
+  });
+
+  it("still needs an SSID", () => {
+    expect(isWifiCompleteWithKey({ ...dhcp, ssid: "  " })).toBe(false);
   });
 });
 

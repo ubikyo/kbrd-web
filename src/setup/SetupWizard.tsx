@@ -6,21 +6,22 @@ import {
   Input,
   Paper,
   Stack,
-  Tabs,
   Text,
   Title,
 } from "@mantine/core";
+import kbrdLogo from "../assets/media/KBRD.svg";
 import { getNetwork, type NetworkStatus } from "../api/network";
 import { completeSetup } from "../api/setup";
 import {
   EMPTY_NETWORK_DRAFT,
   IPV4_FIELDS,
   isIpv4Complete,
-  isWifiComplete,
+  isWifiCompleteWithKey,
   networkBody,
   type NetworkDraft,
 } from "../components/settings/networkDraft";
 import Ipv4Picker from "./Ipv4Picker";
+import SetupArt from "./SetupArt";
 import PasswordPicker from "./PasswordPicker";
 import ScreenPicker from "./ScreenPicker";
 import WifiPicker from "./WifiPicker";
@@ -52,16 +53,42 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-/** The strip across the top, in order. Labels only: an icon and a line of
- * explanation apiece cost more room than they were worth, and the step
- * being answered says what it wants itself. */
-const STEPS = [
-  { value: "wifi", label: "Wi-Fi" },
-  { value: "network", label: "Network" },
-  { value: "screen", label: "Screen" },
-  { value: "password", label: "Password" },
-  { value: "confirm", label: "Confirm" },
+/** The steps as the art names them, one card each and in the wizard's own
+ * order. A `\n` in a label is a line break the card keeps (see
+ * `.setup-card-label` in App.css) — where a line reads better broken at
+ * a particular word than wherever the column happens to run out.
+ *
+ * Their order is the wizard's own — so a card's index is the step it stands for, and the one being
+ * answered is the lit square among them.
+ *
+ * There are five and the panel holds three, so the row slides: see
+ * `CARDS_SHOWN` and `.setup-cards` in App.css. */
+const CARDS = [
+  { number: "1", label: "Select a\nWi-Fi network" },
+  { number: "2", label: "Set the network\naddressing" },
+  { number: "3", label: "Select the connected screen model" },
+  { number: "4", label: "Set a password\nfor access" },
+  { number: "5", label: "Review the settings" },
 ] as const;
+
+/** How many of them the panel shows at once. The width is cut into this
+ * many columns and the row is slid by whole ones, so the number is the
+ * layout's as much as it is the slide's — it is in App.css too, and the
+ * two have to agree. */
+const CARDS_SHOWN = 3;
+
+/** How many cards the row is wound on by, for the step being answered.
+ *
+ * Nothing at all until the active card would fall off the end: the first
+ * three steps are the first three cards, already on screen, and moving
+ * under them would only take the run-up away from the two that come
+ * after. From there it is whatever brings the active card to the last
+ * place shown, and it stops at the end of the row rather than sliding
+ * the last cards out of sight. */
+function slideFor(step: number) {
+  const last = CARDS.length - CARDS_SHOWN;
+  return Math.min(Math.max(step - (CARDS_SHOWN - 1), 0), last);
+}
 
 /**
  * The first run: what the keyboard has to be told before there is an app
@@ -91,8 +118,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
     passphraseTouched: true,
   });
   const [screen, setScreen] = useState<ScreenDraft>(EMPTY_SCREEN_DRAFT);
-  const [password, setPassword] =
-    useState<PasswordDraft>(EMPTY_PASSWORD_DRAFT);
+  const [password, setPassword] = useState<PasswordDraft>(EMPTY_PASSWORD_DRAFT);
 
   const [status, setStatus] = useState<NetworkStatus | null>(null);
   const [saving, setSaving] = useState(false);
@@ -120,7 +146,9 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
   const { widthMm, heightMm } = screenSize(screen);
   const name = screenName(screen);
 
-  const wifiDone = isWifiComplete(network);
+  // The wizard's own rule, not Settings': a first run has no saved key
+  // for an empty field to stand for (see `isWifiCompleteWithKey`).
+  const wifiDone = isWifiCompleteWithKey(network);
   const ipv4Done = isIpv4Complete(network);
   const screenDone = isScreenComplete(screen);
   const passwordDone = isPasswordComplete(password);
@@ -246,75 +274,95 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
 
   return (
     <Box className="setup-page" bg="var(--kbrd-color-body)">
-      <Box className="setup-shell">
-        {/* Centred over the whole column, steps included — it names the
-            page rather than the step being answered. */}
-        <div className="setup-title">Initial setup</div>
+      {/* The two panels, and as wide as the pair of them ever gets (see
+          `.setup-frame` in App.css). Past that the page stops growing
+          them and grows the green beside them instead. */}
+      <Box className="setup-frame">
+        {/* The width the wizard doesn't take, filled rather than left as
+          bare background. The green is the box's own CSS and the shooting
+          stars are drawn over it (see `SetupArt`) — both decoration, and
+          both saying so themselves: the sky carries the `aria-hidden`.
+          The title and the cards below it are not decoration, and are
+          read like any other text. */}
+        <Box className="setup-art">
+          <SetupArt />
 
-        {applied ? (
-          <Paper p="xl" radius="md" withBorder>
-            <Stack gap="md">
-              <Title order={3}>Setting up</Title>
-              <Text size="sm">
-                The keyboard is joining <b>{network.ssid}</b> and is leaving
-                this network as it does, so this page will stop answering.
-                Open it again on the address{" "}
-                {network.mode === "static"
-                  ? "you gave it"
-                  : "your router gives it"}
-                .
-              </Text>
-              {hotspot?.ssid && (
-                <Text size="sm" c="dimmed">
-                  If it cannot join that network it comes back up as its own
-                  hotspot, <b>{hotspot.ssid}</b>, at <b>{hotspot.address}</b>{" "}
-                  — the setup is saved either way and won't be asked for
-                  again.
-                </Text>
-              )}
-              <Group>
-                <Button color="green" onClick={onDone}>
-                  Continue anyway
-                </Button>
-              </Group>
-            </Stack>
-          </Paper>
-        ) : (
-          /* One `Tabs`, the way the Settings modal is built: the steps
-             in its list, what is being answered in its panel. `Tabs`
-             rather than Mantine's own `Stepper` because that styling is
-             what was wanted — see `.setup-steps` in App.css for the half
-             that makes the list inert, a wizard being walked with Back
-             and Next rather than by clicking ahead.
+          {/* Over the cards rather than over the wizard opposite: it
+            names what the three of them are a list of, and the wizard's
+            own column is headed by the mark instead. */}
+          <div className="setup-title">Welcome!</div>
+          <p className="setup-intro">
+            Complete these steps to set up <b>KBRD</b>.
+          </p>
 
-             Horizontal, so the steps read across the top of the panel
-             they head — the column is 650px wide and four labels fit
-             across it with room to spare. */
-          <Tabs
-            className="setup-tabs"
-            value={STEPS[step].value}
-            variant="outline"
-            style={
-              {
-                "--tab-border-color": "var(--kbrd-border-color)",
-              } as React.CSSProperties
-            }
-          >
-            {/* Equal quarters of the frame rather than four labels
-                huddled at its left edge — walked in order, they read as
-                how far in you are. */}
-            <Tabs.List className="setup-steps" grow>
-              {STEPS.map((item) => (
-                <Tabs.Tab key={item.value} value={item.value}>
-                  {item.label}
-                </Tabs.Tab>
+          {/* Along the foot of the panel, over the art. The number in its
+            disc at the top of each square and the line it stands for at
+            the bottom — the two corners the square is drawn to hold
+            apart (see `.setup-card` in App.css).
+
+            The frame shows three of the five; the row inside it carries
+            all of them and is slid under it, which is what walks the
+            last two into view as they are reached. */}
+          <Box className="setup-cards">
+            <Box
+              className="setup-cards-track"
+              style={{ "--slide": slideFor(step) } as React.CSSProperties}
+            >
+              {CARDS.map((card, index) => (
+                <Box
+                  key={card.number}
+                  className="setup-card"
+                  data-active={index === step || undefined}
+                >
+                  <span className="setup-card-number">{card.number}</span>
+                  <span className="setup-card-label">{card.label}</span>
+                </Box>
               ))}
-            </Tabs.List>
+            </Box>
+          </Box>
+        </Box>
 
-            {/* One panel, always the active step's: rendering all four
-                would mean four copies of `stepBody` for the one that is
-                on screen. */}
-            <Tabs.Panel className="setup-content" value={STEPS[step].value}>
+        <Box className="setup-shell">
+          {/* The app's own mark at the head of the column, where the page's
+            title used to stand — that has moved to the art (see
+            `.setup-title`), and what heads the wizard is whose keyboard
+            is being set up rather than what is being done to it. */}
+          <img className="setup-logo" src={kbrdLogo} alt="KBRD" />
+
+          {applied ? (
+            <Paper p="xl" radius="md" withBorder>
+              <Stack gap="md">
+                <Title order={3}>Setting up</Title>
+                <Text size="sm">
+                  The keyboard is joining <b>{network.ssid}</b> and is leaving
+                  this network as it does, so this page will stop answering.
+                  Open it again on the address{" "}
+                  {network.mode === "static"
+                    ? "you gave it"
+                    : "your router gives it"}
+                  .
+                </Text>
+                {hotspot?.ssid && (
+                  <Text size="sm" c="dimmed">
+                    If it cannot join that network it comes back up as its own
+                    hotspot, <b>{hotspot.ssid}</b>, at <b>{hotspot.address}</b>{" "}
+                    — the setup is saved either way and won't be asked for
+                    again.
+                  </Text>
+                )}
+                <Group>
+                  <Button color="green" onClick={onDone}>
+                    Continue anyway
+                  </Button>
+                </Group>
+              </Stack>
+            </Paper>
+          ) : (
+            /* The step being answered and the row that walks it, and
+             nothing above them naming the steps: that job belongs to the
+             cards on the art (see `CARDS`), which is why there is no
+             strip here and no `Tabs` left to draw one. */
+            <Box className="setup-content">
               {/* The only part that scrolls: the page itself is the
                   window's own height, so a long step gives way here
                   rather than pushing Back/Next off the bottom. */}
@@ -344,7 +392,7 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                     Back
                   </Button>
                 )}
-                {step < STEPS.length - 1 ? (
+                {step < stepDone.length - 1 ? (
                   <Button
                     color="green"
                     disabled={!stepDone[step]}
@@ -363,15 +411,18 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
                   </Button>
                 )}
               </Group>
-            </Tabs.Panel>
-          </Tabs>
-        )}
+            </Box>
+          )}
+        </Box>
       </Box>
 
-      {/* The width the wizard doesn't take, filled rather than left as
-          bare background — decoration only, which is why it is an empty
-          box and hidden from a reader (see `.setup-art` in App.css). */}
-      <Box className="setup-art" aria-hidden />
+      {/* Everything to the right of those 1500px, in the same green as
+          the panel on the left and kept off the window's edges by the
+          same 20px — so a wide screen reads as the wizard set into a
+          green page rather than as a page with a gap down one side. It
+          is decoration and nothing else: there is nothing in it to read
+          and nothing in it to reach. */}
+      <Box className="setup-spill" aria-hidden />
     </Box>
   );
 }

@@ -765,7 +765,7 @@ body.debug * {
    -------------------------------------------------------------------------- */
 
 /* The whole window, and nothing else on screen behind it: the wizard
-   down the left, the art filling whatever is left of the width (see
+   down the right, the art filling whatever is left of the width (see
    `.setup-art`). A row here, and a column of flex boxes all the way down
    inside it rather than a page that grows — that is what keeps the steps
    and Back/Next on screen whatever the step is asking for. */
@@ -777,169 +777,493 @@ body.debug * {
      margin alone would still sit tighter than the Wi-Fi one. */
   --setup-label-height: 24px;
   --setup-label-gap: 2px;
-  /* What the step being answered stands clear of the strip of steps
-     above it. Under the strip rather than inside it — padding on the
-     group itself would only make the grey taller. */
-  --setup-panel-padding: 80px;
-
+  /* The panel's green, and the green of whatever is left of the page
+     beside it (see `.setup-spill`) — one declaration, because the two
+     have to be the same colour or the seam between them shows. */
+  --setup-green: linear-gradient(
+    to top,
+    #1a4d25,
+    var(--mantine-color-green-filled)
+  );
+  /* How wide the two panels together are ever allowed to get. */
+  --setup-frame-width: 1500px;
   height: 100vh;
   box-sizing: border-box;
   display: flex;
   overflow: hidden;
 }
 
-/* The wizard's own column: 550px of content inside 50px a side, 80px over
-   the title and 50px under Back/Next — which then stand off the bottom
-   edge by the same 50px the art keeps beside them. The padding lives here rather than on the
-   page so that the art can run to the window's edges — the room around
-   the wizard belongs to the wizard, not to the page.
+/* The two panels together, held to a readable width and left against the
+   left edge of the page: a 2560px monitor would otherwise give the wizard
+   a 1280px column of its own, which is a line of text nobody reads across
+   twice.
 
-   It gives way rather than pushing the art off screen (`flex: 0 1`), so
-   a window between the two widths narrows the wizard first. */
-.setup-shell {
-  flex: 0 1 650px;
+   `flex: 0 1` and a basis rather than a `max-width`, so it is this that
+   gives way as the window narrows and `.setup-spill` beside it that is
+   squeezed out first. */
+.setup-frame {
+  flex: 0 1 var(--setup-frame-width);
   min-width: 0;
   min-height: 0;
-  padding: 80px 50px 50px;
+  display: flex;
+}
+
+/* The page past those 1500px. Nothing in it — it is the same green as the
+   panel opposite, off the window's edges by the same 20px and cut with
+   the same corners, so the wizard reads as set into a green page rather
+   than as a page with a gap down one side.
+
+   Shown only once there is room for it to be more than its own margin:
+   below that the margin alone would take 20px off the wizard for a strip
+   of green nobody would see. */
+.setup-spill {
+  display: none;
+}
+
+@media (min-width: 1540px) {
+  .setup-spill {
+    display: block;
+    flex: 1;
+    min-width: 0;
+    margin: 20px 20px 20px 0;
+    border-radius: 10px;
+    background-image: var(--setup-green);
+  }
+}
+
+/* The wizard's own column: whatever the art leaves — the half of the
+   width it doesn't take, less the room between them — with 80px a side
+   and the same 80px over the mark, and 50px under Back/Next: less than
+   the sides, since a row of buttons needs no more room under it than it
+   takes to sit clear of the edge. The padding
+   lives here rather than on the page so that the art can run to the
+   window's edges — the room around the wizard belongs to the wizard, not
+   to the page.
+
+   `flex: 1 1 auto` and no width of its own: the art's share is the one
+   that is stated, and this takes the rest of the row whatever that comes
+   to, rather than holding a width and leaving a gap beside it. */
+.setup-shell {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  padding: 80px 80px 50px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
 }
 
-/* Everything the wizard leaves, edge to edge. Decoration and nothing
-   else — it is in the CSS rather than in the wizard's markup for the same
-   reason it is `aria-hidden` there: there is nothing in it to read.
-
-   `cover` over the file's own `slice`: the SVG is a 1200 × 800 wash of
-   gradients with no detail to lose, so whatever the column's shape turns
-   out to be, it is filled by cropping rather than by stretching. */
+/* Everything the wizard leaves, edge to edge: the green panel that the
+   title, the cards and the shooting stars all stand on. */
 .setup-art {
-  flex: 1;
+  flex: 0 0 50%;
   min-width: 0;
-  /* 50px off three of the window's edges; the fourth is the wizard's,
-     and the art starts where its column ends.
+  /* Half the window's width, and the wizard has the other half: a share
+     rather than the leftovers, so the two keep their proportions at
+     every width instead of the art growing alone.
+
+     20px off three of the window's edges; the fourth is the wizard's,
+     and the art stops where its column starts.
 
      A margin rather than padding, because of the corners below: a
      background clipped inside padding has its radii cut back by that
-     padding's own width, which at 50px against 15 would leave the corners
-     square again. This way the box that is painted is the box that is
+     padding's own width, and at 80px against 10 there would be nothing
+     left of them. This way the box that is painted is the box that is
      rounded. */
-  margin: 50px 50px 50px 0;
-  border-radius: 15px;
-  background: url("./media/background.svg") center / cover no-repeat;
+  margin: 20px 0 20px 20px;
+  border-radius: 10px;
+  /* Up from a deep green into the one the wizard's own Next and Finish
+     buttons are filled with (see `--setup-green`).
+
+     Dark end at the foot, which is where the title and the cards stand:
+     white text and white squares have the most ground under them exactly
+     where they need it, and the button green is kept for the top, which
+     is the half the streaks cross (see `.setup-sky`). */
+  background-image: var(--setup-green);
+
+  /* The sky `SetupArt` mounts is placed against this box, and clipped to
+     it: a streak begins and ends outside the frame. */
+  position: relative;
+  overflow: hidden;
+
+  /* The cards stand at the foot of the panel, the art filling the rest
+     above them. The padding is the room they keep off the panel's three
+     edges; the fourth is the art's own top, which they never reach. */
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 80px;
+  box-sizing: border-box;
 }
 
-/* Under this it is a strip rather than a panel: the wizard's column takes
-   650px of the width, so this is where the art stops being 200px wide —
-   below it it goes entirely and the page is the wizard again. */
+/* The frame the cards are seen through: three of them across the panel's
+   width, equal shares of whatever is left of it after the padding. There
+   are five in the row and this is what hides the other two — the row is
+   slid under it rather than the cards being swapped out, so what walks
+   into view is the card itself. */
+.setup-cards {
+  /* The sky is placed absolutely over the whole box, so the cards need a
+     stacking context of their own to be drawn on top of it. */
+  position: relative;
+  z-index: 1;
+
+  overflow: hidden;
+}
+
+/* All five, in one row. The frame above is exactly as wide as the track,
+   so a column is a third of it less its share of the gaps, and the two
+   cards past the third hang off the end where the frame clips them.
+
+   The slide is a whole card and the gap after it, `(100% + gap) / 3` —
+   the same third, plus the gap that a third of the width doesn't count.
+   `--slide` is how many of those the row is wound on by, set on the
+   element by `SetupWizard` (see `slideFor`). The percentages are the
+   track's own width, which is the frame's, so both sums are taken from
+   the one figure.
+
+   A plain width, and emphatically not `minmax(0, …)`: a track with a
+   floor of zero is grown out of the free space a share at a time, so
+   five of them would each settle for a fifth of the frame and all five
+   would fit in it. A definite width is the track's size outright,
+   whatever is left over — which is what puts the last two off the end
+   where they belong. A label too long for that width breaks instead of
+   widening it (see `.setup-card-label`). */
+.setup-cards-track {
+  --card-gap: 20px;
+
+  width: 100%;
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: calc((100% - 2 * var(--card-gap)) / 3);
+  gap: var(--card-gap);
+
+  transform: translateX(
+    calc(var(--slide, 0) * -1 * (100% + var(--card-gap)) / 3)
+  );
+  transition: transform 320ms ease;
+}
+
+/* The row arrives already wound on rather than winding on as the page
+   opens, for a reader who has asked for that — the same call `SetupArt`
+   makes about its own motion. */
+@media (prefers-reduced-motion: reduce) {
+  .setup-cards-track {
+    transition: none;
+  }
+}
+
+/* One of them: square, and the two things in it pushed into opposite
+   corners — the number at the top, what it stands for at the bottom.
+   Square is what sets that distance, so the height is the width's and
+   not the text's.
+
+   White and black outright rather than a theme's own: the ground here is
+   the art's green under either of them, so neither colour is the theme's
+   to choose.
+
+   At rest the square is a twentieth of that white and its text is white
+   too — barely a square at all, read off the art rather than laid on
+   top of it. The step being answered is the one that turns solid, and
+   turns its text black to match (see `[data-active]` below). With the
+   strip of steps gone, that flip is what says where in the wizard you
+   are. */
+.setup-card {
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  padding: 30px;
+  border-radius: 15px;
+  background-color: rgb(255 255 255 / 5%);
+  color: #ffffff;
+
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+/* The step being answered. Set on the card by `SetupWizard` from the
+   card's own place in the row, which is the step it stands for — there
+   is one card per step, so exactly one of the five carries it. */
+.setup-card[data-active] {
+  background-color: #ffffff;
+  color: #000000;
+}
+
+/* Top left, in its disc. A fixed square rather than padding around the
+   digit: one glyph wide is not a circle, and all three have to match. */
+.setup-card-number {
+  align-self: flex-start;
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  /* Three times the card's own white, so the disc reads as a disc
+     against it without ever becoming the solid mark only the active card
+     carries.
+     The digit stays white throughout: white on this, white on the black
+     the active card fills it with. */
+  background-color: rgb(255 255 255 / 15%);
+  color: #ffffff;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* The active card's disc, in the green the wizard's own Next and Finish
+   buttons are filled with — the variable rather than the hex, so it is
+   the same green under either theme exactly as they are. The digit stays
+   white on it, as their labels do. */
+.setup-card[data-active] .setup-card-number {
+  background-color: var(--mantine-color-green-filled);
+}
+
+/* Bottom left: under the number rather than opposite it, so a label that
+   runs to two lines starts where the disc above it does. */
+.setup-card-label {
+  align-self: flex-start;
+  text-align: left;
+  overflow-wrap: break-word;
+  min-width: 0;
+  /* A `\n` in a label breaks the line where it stands; everything else
+     still wraps to the column as it always did (see `CARDS`). */
+  white-space: pre-line;
+  font-size: 14px;
+  line-height: 1.3;
+}
+
+/* The sky `setup/SetupArt` fills, over the still wash behind it. No size
+   of its own — it takes the panel it is placed against, and the panel
+   clips it (see `.setup-art`'s own `overflow`), which is what lets a
+   streak begin and end outside the frame.
+
+   The mask is what keeps the streaks to the top two thirds: they fade out
+   through the last of it rather than stopping at a line, which a plain
+   `height` or a second `overflow` would have drawn straight across the
+   panel. It is on this box and the turn is on the one inside, because a
+   mask is taken in the element's own axes — a vertical fade on a box
+   turned 45deg comes out diagonal.
+
+   `pointer-events: none` because it is not there to be touched: it is
+   `aria-hidden` and it is laid over the cards, which are not — a click
+   meant for one of them has to reach it rather than land on the sky in
+   front. */
+.setup-sky {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+
+  -webkit-mask-image: linear-gradient(
+    to bottom,
+    #000 0%,
+    #000 42%,
+    transparent 68%
+  );
+  mask-image: linear-gradient(to bottom, #000 0%, #000 42%, transparent 68%);
+}
+
+/* The turn, and the whole of why the streaks run diagonally: they travel
+   along their own x axis, and this is what that axis is. */
+.setup-sky-field {
+  position: absolute;
+  inset: 0;
+  transform: rotateZ(45deg);
+}
+
+/* One streak: a 2px bar whose *width* is what moves. It grows out of
+   nothing into a tail and shrinks back while the bar itself is carried
+   across, which together read as something passing rather than something
+   stretching.
+
+   Pale green rather than the pen's blue, and it is the one thing on this
+   panel allowed to be bright: a hairline two pixels tall adds no light to
+   speak of over the panel as a whole, so it can be near white at its head
+   without washing out the green the way a broad glow did.
+
+   `--setup-star-delay` and `--setup-star-run` come in from the component.
+   The delay is set after the shorthand, which would otherwise reset
+   it. */
+.setup-star {
+  position: absolute;
+  height: 2px;
+  border-radius: 999px;
+  background: linear-gradient(-45deg, #d3f9d8, rgb(211 249 216 / 0%));
+  filter: drop-shadow(0 0 6px rgb(178 242 187 / 70%));
+
+  animation:
+    setup-star-tail var(--setup-star-run) ease-in-out infinite,
+    setup-star-shoot var(--setup-star-run) ease-in-out infinite;
+  animation-delay: var(--setup-star-delay);
+}
+
+/* The flare at the head: two more bars, crossed, growing and shrinking on
+   their own clock. Pseudo-elements, so that one element in the markup is
+   one streak and the head is not a second thing to place. */
+.setup-star::before,
+.setup-star::after {
+  content: "";
+  position: absolute;
+  top: calc(50% - 1px);
+  right: 0;
+  height: 2px;
+  border-radius: 100%;
+  background: linear-gradient(
+    -45deg,
+    rgb(211 249 216 / 0%),
+    #d3f9d8,
+    rgb(211 249 216 / 0%)
+  );
+
+  animation: setup-star-shine var(--setup-star-run) ease-in-out infinite;
+  animation-delay: var(--setup-star-delay);
+}
+
+/* Crossed: the same bar at plus and minus 45deg to the streak, which on a
+   sky already turned 45deg stands them upright and across it. */
+.setup-star::before {
+  transform: translateX(50%) rotateZ(45deg);
+}
+
+.setup-star::after {
+  transform: translateX(50%) rotateZ(-45deg);
+}
+
+@keyframes setup-star-tail {
+  0% {
+    width: 0;
+  }
+  30% {
+    width: 100px;
+  }
+  100% {
+    width: 0;
+  }
+}
+
+@keyframes setup-star-shine {
+  0% {
+    width: 0;
+  }
+  50% {
+    width: 30px;
+  }
+  100% {
+    width: 0;
+  }
+}
+
+@keyframes setup-star-shoot {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(300px);
+  }
+}
+
+/* Asked for stillness, the sky keeps its streaks and stops running them:
+   each holds the width it would have partway through a run. A sky emptied
+   instead would be the panel with its art taken away rather than its art
+   at rest. */
+@media (prefers-reduced-motion: reduce) {
+  .setup-star,
+  .setup-star::before,
+  .setup-star::after {
+    animation: none;
+  }
+
+  .setup-star {
+    width: 100px;
+  }
+
+  .setup-star::before,
+  .setup-star::after {
+    width: 30px;
+  }
+}
+
+/* The art is half the width wherever it is shown at all, so what runs
+   out below this is the wizard's own half: under ~265px of content its
+   fields have nowhere to go. The art goes entirely rather than shrinking with
+   it, and the page is the wizard again. */
 @media (max-width: 850px) {
   .setup-art {
     display: none;
   }
 }
 
-/* Centred over the whole of the wizard's column, steps and panel alike:
-   it names the page, not what is being answered on it. */
+/* At the head of the cards, down on the art: it names the page, and the
+   three squares under it are what that page is going to ask for. Ranged
+   left, on the same edge their numbers and labels are (see
+   `.setup-card-label`), rather than centred over a row that isn't. */
 .setup-title {
+  /* Over the sky, which is placed absolutely across the whole panel — the
+     same reason `.setup-cards` below takes a layer of its own. */
+  position: relative;
+  z-index: 1;
+
   flex-shrink: 0;
-  padding-bottom: 80px;
+  /* The 80px above it is only ever room the art gives up: the panel packs
+     its contents against its foot (`justify-content: flex-end`), so what
+     is over the title is the picture, and this is what the title would
+     keep off anything that ever stood there. Close under it is the line
+     that belongs to it, which is what then stands the 40px off the
+     cards (see `.setup-intro`). */
+  margin: 80px 0 16px;
 
   font-family: "KBRD Kedebideri", var(--mantine-font-family);
-  font-size: 45px;
+  font-size: 54px;
   line-height: 1;
-  text-align: center;
+  text-align: left;
   color: #ffffff;
 }
 
-/* The steps across the top, the step being answered under them. Mantine
-   lays a horizontal `Tabs` out as a block; a column of flex boxes is what
-   hands the panel the height the strip leaves, so the step's own body is
-   what gives way when a window is short (see `.setup-body`). */
-.setup-tabs {
-  flex: 1;
-  min-height: 0;
-  /* The whole of what the shell gives it — the shell is what holds the
-     wizard to a readable width (see its own `flex-basis`), and a second
-     cap here would only take half of that again. */
-  width: 100%;
-  display: flex;
-  flex-direction: column;
+/* The line under the title: what the row of cards below it is a list of.
+   Set in the page's own face rather than the title's — one heading in
+   Kedebideri and the rest of the page in Inter, the way the wizard's own
+   column reads.
+
+   A step down from the title's white: it is the same voice, saying less
+   loudly what the three squares under it already show. */
+.setup-intro {
+  position: relative;
+  z-index: 1;
+
+  flex-shrink: 0;
+  margin: 0 0 40px;
+  max-width: 34em;
+
+  font-size: 16px;
+  line-height: 1.5;
+  color: rgb(255 255 255 / 75%);
 }
 
-/* The strip: the four steps as one grey group. Its own height, not a
-   share of the column — everything left over is the panel's.
-
-   No line anywhere in it — not around the group, not under it (see the
-   `::before` below), and not around a tab (`--tab-border-width`, which
-   the outline variant would otherwise draw the active one with). The
-   ground is what separates it from the page, and the step being answered
-   is a lighter shade of it. The group clips, so that shade stops at the
-   corners rather than crossing them. */
-.setup-steps {
-  /* The group's own corners, and the two tabs that have to match them
-     (see below) — one value, so they can't drift apart. */
-  --setup-steps-radius: 10px;
-  --tab-border-width: 0;
-
-  flex: none;
-  background-color: var(--kbrd-color-sunken);
-  border-radius: var(--setup-steps-radius);
-  overflow: hidden;
-
-  /* Read-only: the wizard is walked with Back and Next, and the steps
-     are there to say where in it you are. Nothing about them takes a
-     click — including the cursor and the hover, which would promise
-     one. */
-  pointer-events: none;
+/* The app's own mark where the wizard's column begins, standing off the
+   step below it by what the title used to. A wide, flat logo, the way the
+   Composer's own is (see `.composer-logo`): its height is what's set and
+   its width follows, and it is centred on the column as the title was. */
+.setup-logo {
+  flex-shrink: 0;
+  display: block;
+  height: 132px;
+  width: auto;
+  margin: 0 auto 80px;
 }
 
-/* Mantine draws the outline variant's rule as a border on the list's own
-   `::before`, hard-coded rather than read off a variable — so this is
-   what takes it off. Ours lands after `@mantine/core/styles.css` (see
-   `main.tsx`), which is what settles it between two rules of the same
-   weight. */
-.setup-steps::before {
-  border: none;
-}
+/* The step being answered, under the mark that heads the column. A column
+   of flex boxes down from the shell, so the step's own body is what gives
+   way when a window is short (see `.setup-body`) rather than Back/Next
+   being pushed off the bottom.
 
-/* And the 1px marks the variant paints at the active tab's corners to
-   join it to that rule: there is no rule left for them to join. */
-.setup-steps .mantine-Tabs-tab::before,
-.setup-steps .mantine-Tabs-tab::after {
-  content: none;
-}
-
-/* Square where the tabs meet each other, rounded only where they meet
-   the frame: Mantine rounds every tab's own top corners, which inside one
-   group reads as four boxes rather than as one strip. */
-.setup-steps .mantine-Tabs-tab {
-  border-radius: 0;
-}
-
-.setup-steps .mantine-Tabs-tab:first-child {
-  border-start-start-radius: var(--setup-steps-radius);
-  border-end-start-radius: var(--setup-steps-radius);
-}
-
-.setup-steps .mantine-Tabs-tab:last-child {
-  border-start-end-radius: var(--setup-steps-radius);
-  border-end-end-radius: var(--setup-steps-radius);
-}
-
-/* The step being answered, picked out of the grey strip rather than
-   shaded up from it: white, and the text that reads on white. Both stated
-   outright — the point is the contrast against the group's own ground,
-   which is the same grey under either theme. */
-.setup-steps .mantine-Tabs-tab[data-active] {
-  background-color: #ffffff;
-  color: #000000;
-}
-
+   The whole of what the shell gives it — the shell is what holds the
+   wizard to a readable width (see `.setup-frame`), and a second cap here
+   would only take half of that again. */
 .setup-content {
   flex: 1;
   min-width: 0;
   min-height: 0;
-  padding-top: var(--setup-panel-padding);
+  width: 100%;
   display: flex;
   flex-direction: column;
 }
@@ -1007,6 +1331,57 @@ body.debug * {
   .setup-body {
     overflow: visible;
   }
+}
+
+/* The Addressing menu (see `setup/Ipv4Picker`), drawn as the field's own
+   box carried on downwards rather than as a card floating under it.
+
+   It is in a portal, so none of the wizard's own scoping reaches it —
+   hence a class of its own, and hence the radius stated here rather than
+   inherited from `--input-radius` on `.setup-columns`.
+
+   Black, and its text with it: the panel it hangs over is a green one and
+   the menu is two words, so it is read as a hole rather than as a sheet
+   of paper. Under the light theme the inherited text would be near-black
+   on it, which is why both are set. */
+.setup-select-dropdown {
+  background-color: #000000;
+  color: #ffffff;
+
+  /* The same hairline the fields are drawn with (see
+     `.setup-page .mantine-Input-input`). */
+  border-color: var(--kbrd-rule-color);
+
+  /* No line where the two meet: the field's own bottom border is already
+     there, and a second one under it would draw double. */
+  border-top: none;
+
+  /* Square where it meets the field, cut where it doesn't — the field
+     squares off its own bottom to match (see `.setup-select-input`). */
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: var(--mantine-radius-sm);
+  border-bottom-right-radius: var(--mantine-radius-sm);
+}
+
+/* The rows in it. Mantine colours these from the theme's own surfaces,
+   which against black are what the light theme would put on white. */
+.setup-select-dropdown .mantine-Combobox-option {
+  color: #ffffff;
+}
+
+.setup-select-dropdown .mantine-Combobox-option[data-combobox-selected],
+.setup-select-dropdown .mantine-Combobox-option:hover {
+  background-color: rgb(255 255 255 / 10%);
+}
+
+/* The field while its menu is open: the bottom corners give way, so the
+   two boxes read as one. `data-expanded` is Mantine's own, and it is off
+   again the moment the menu closes — which is what puts the radius
+   back. */
+.setup-select-input[data-expanded] {
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
 }
 
 /* A step in two columns: what is being chosen on the left, what that
