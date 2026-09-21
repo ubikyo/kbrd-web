@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  CUSTOM_SCREEN_NAME,
   EMPTY_SCREEN_DRAFT,
   MAX_MM,
   MIN_MM,
@@ -49,10 +50,16 @@ describe("a screen described by hand", () => {
     expect(isScreenComplete(draft)).toBe(true);
   });
 
-  it("is unanswered without a name, or with a size KBRD-API would refuse", () => {
-    expect(
-      isScreenComplete(custom({ name: "  ", widthMm: 100, heightMm: 60 })),
-    ).toBe(false);
+  it("falls back to a name of its own when the device had none", () => {
+    // Nothing asks for one any more — the two measurements are the whole
+    // of this path (see `ScreenPicker`) — so an unnamed screen is named
+    // here rather than being left unanswered for want of a name.
+    const draft = custom({ name: "  ", widthMm: 100, heightMm: 60 });
+    expect(screenName(draft)).toBe(CUSTOM_SCREEN_NAME);
+    expect(isScreenComplete(draft)).toBe(true);
+  });
+
+  it("is unanswered with a size KBRD-API would refuse", () => {
     expect(
       isScreenComplete(
         custom({ name: "Panel", widthMm: MIN_MM - 1, heightMm: 60 }),
@@ -66,7 +73,7 @@ describe("a screen described by hand", () => {
   });
 
   it("keeps nothing from the entry a brand and model still name", () => {
-    // Moving to "Another screen" clears both (see `ScreenPicker`), but
+    // Moving to "Another model" clears both (see `ScreenPicker`), but
     // the draft has to read the same way even if they were left behind.
     const draft = custom({
       brand: "Waveshare",

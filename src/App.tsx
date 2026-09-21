@@ -63,7 +63,7 @@ export default function App() {
     setLayersLoaded(true);
   }, []);
 
-  const { layoutSettings, setLayoutSettings, saveDisplaySettings } =
+  const { layoutSettings, setLayoutSettings, screen, saveDisplaySettings } =
     useDisplaySettings();
 
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
@@ -235,6 +235,14 @@ export default function App() {
   // offer two panels with nothing in them.
   const noLayouts = layouts.loaded && layouts.items.length === 0;
 
+  // There is a layout, and we know it — which is not what `!noLayouts`
+  // says. That one is also true while the first list is still on its
+  // way, so anything hung on it appeared for an instant on a device
+  // that turned out to have no layout at all: the two side panels did
+  // exactly that, sliding in off both edges and straight back out (see
+  // `Composer`, where the display and the toolbar had the same fault).
+  const hasLayout = layouts.loaded && !noLayouts;
+
   const entityEditors = useEntityEditors({
     layout,
     layer,
@@ -311,7 +319,8 @@ export default function App() {
         opened={settingsOpened}
         onClose={() => setSettingsOpened(false)}
         settings={layoutSettings}
-        onSave={saveDisplaySettings}
+        screen={screen}
+        onSave={(next, nextScreen) => void saveDisplaySettings(next, nextScreen)}
         debug={debug}
         onDebugChange={setDebug}
         startupMode={startupMode}
@@ -329,6 +338,7 @@ export default function App() {
           setInspectorPanel(next);
           saveInspectorPanel(next);
         }}
+        hasLayout={hasLayout}
       />
 
       <AppShell.Main
@@ -362,7 +372,7 @@ export default function App() {
               is nothing behind it to open onto. Whether it was open is
               kept in state either way, so it comes back as it was on the
               first layout created. */}
-          {!noLayouts && (
+          {hasLayout && (
             <Box
               className="media-panel"
               data-opened={mediaOpened || undefined}
@@ -412,7 +422,7 @@ export default function App() {
           </Box>
           {/* Dropped with the Media panel, and for the same reason —
               see there. */}
-          {!noLayouts && (
+          {hasLayout && (
             <Box
               className="inspector-panel"
               data-opened={inspectorOpened || undefined}

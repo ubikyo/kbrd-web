@@ -116,14 +116,27 @@ describe("isNetworkDraftComplete", () => {
     expect(isNetworkDraftComplete({ ...dhcp, ssid: "  " })).toBe(false);
   });
 
-  it("needs every one of the five under Static", () => {
+  it("needs every one of the five under Static but the second resolver", () => {
     expect(isNetworkDraftComplete(staticDraft)).toBe(true);
     for (const { key, label } of IPV4_FIELDS) {
       expect(
         isNetworkDraftComplete({ ...staticDraft, [key]: "" }),
         label,
-      ).toBe(false);
+      ).toBe(key === "dns2");
     }
+  });
+
+  it("takes a static configuration with one resolver", () => {
+    // A spare, not a requirement: names resolve through the first, and
+    // a network with one DNS server is a network that works.
+    expect(isNetworkDraftComplete({ ...staticDraft, dns2: "" })).toBe(true);
+    expect(isNetworkDraftComplete({ ...staticDraft, dns2: "0.0.0.0" })).toBe(
+      true,
+    );
+    // Optional is not unchecked.
+    expect(isNetworkDraftComplete({ ...staticDraft, dns2: "10.0.0.256" })).toBe(
+      false,
+    );
   });
 
   it("asks for none of them under DHCP", () => {
@@ -179,6 +192,15 @@ describe("ipv4Problems", () => {
       "address",
     ]);
   });
+
+  it("says nothing about a second resolver left unanswered", () => {
+    expect(ipv4Problems({ ...staticDraft, dns2: "" })).toEqual([]);
+    expect(ipv4Problems({ ...staticDraft, dns2: "0.0.0.0" })).toEqual([]);
+    // And still names it when what is there isn't an address.
+    expect(ipv4Problems({ ...staticDraft, dns2: "10.0.0.256" })).toEqual([
+      "dns2",
+    ]);
+  });
 });
 
 describe("networkBody", () => {
@@ -206,6 +228,14 @@ describe("networkBody", () => {
       dns1: "1.1.1.1",
       dns2: "8.8.8.8",
     });
+  });
+
+  it("sends no second resolver for one left unanswered", () => {
+    // `0.0.0.0` included: the field starts on it, and sending it would
+    // hand the keyboard a resolver that resolves nothing rather than
+    // telling it there is no second one.
+    expect(networkBody({ ...staticDraft, dns2: "" }).ipv4.dns2).toBe("");
+    expect(networkBody({ ...staticDraft, dns2: "0.0.0.0" }).ipv4.dns2).toBe("");
   });
 
   it("leaves the key out entirely while the field is untouched", () => {

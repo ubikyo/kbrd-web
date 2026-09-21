@@ -1,4 +1,5 @@
 import { findPanel, panelName } from "./panels";
+import type { DisplayData } from "../types/layout";
 
 /**
  * The screen as it is being declared, kept apart from the step that asks
@@ -16,12 +17,21 @@ export const MAX_MM = 2000;
  * (see `panels.ts`), or described by hand. */
 export type ScreenMode = "known" | "custom";
 
+/** What a screen described by hand is called. It isn't asked for — the
+ * two measurements are the whole of that path (see `ScreenPicker`) — but
+ * the device stores a name for every screen, so there is one here to
+ * store. A name already on the device is kept rather than overwritten
+ * with it (see `screenName`). */
+export const CUSTOM_SCREEN_NAME = "Custom screen";
+
 export type ScreenDraft = {
   mode: ScreenMode;
   brand: string;
   model: string;
-  /** Only used by the custom path — a panel off the list is named after
-   * its brand and model (see `panelName`). */
+  /** Only used by the custom path, and only ever what the device already
+   * had: nothing types one any more, and an unnamed custom screen is
+   * called `CUSTOM_SCREEN_NAME`. A panel off the list is named after its
+   * brand and model instead (see `panelName`). */
   name: string;
   /** Likewise: a known panel's size is read off the list, and these two
    * are what the custom path types instead. */
@@ -57,16 +67,18 @@ export function screenSize(draft: ScreenDraft) {
 }
 
 /** What the device will store as the screen's name. Empty until there is
- * one — a brand on its own doesn't name a screen. */
+ * one — a brand on its own doesn't name a screen, while a screen
+ * described by hand always has `CUSTOM_SCREEN_NAME` to fall back on. */
 export function screenName(draft: ScreenDraft) {
-  if (draft.mode !== "known") return draft.name.trim();
+  if (draft.mode !== "known") return draft.name.trim() || CUSTOM_SCREEN_NAME;
   return draft.brand && draft.model
     ? panelName(draft.brand, draft.model)
     : "";
 }
 
 /** Whether the step has been answered: a screen with a name and a size
- * KBRD-API would take. */
+ * KBRD-API would take. Only the size is ever missing on the custom path
+ * — the name there is a constant (see `CUSTOM_SCREEN_NAME`). */
 export function isScreenComplete(draft: ScreenDraft) {
   const { widthMm, heightMm } = screenSize(draft);
   return (
@@ -74,4 +86,37 @@ export function isScreenComplete(draft: ScreenDraft) {
     sizeInRange(widthMm) &&
     sizeInRange(heightMm)
   );
+}
+
+/**
+ * The screen the device has stored, as a draft to edit (see
+ * `components/modals/Settings`, which asks the same question the wizard
+ * does and off the same list).
+ *
+ * A row carrying a brand and a model was picked off that list, and goes
+ * back to it — its size is the list's rather than the row's, so a panel
+ * whose measurements are corrected in `panels.ts` corrects itself here.
+ * Anything else was described by hand: its name and its millimetres are
+ * all there is, and there is no entry behind them.
+ *
+ * A device that has never been set up has neither, and comes back as the
+ * empty draft rather than as a custom screen named "".
+ */
+export function screenDraftFrom(display: DisplayData): ScreenDraft {
+  if (display.brand && display.model && findPanel(display.brand, display.model)) {
+    return {
+      ...EMPTY_SCREEN_DRAFT,
+      mode: "known",
+      brand: display.brand,
+      model: display.model,
+    };
+  }
+  if (!display.name) return EMPTY_SCREEN_DRAFT;
+  return {
+    ...EMPTY_SCREEN_DRAFT,
+    mode: "custom",
+    name: display.name,
+    widthMm: display.physical_width_mm,
+    heightMm: display.physical_height_mm,
+  };
 }

@@ -491,9 +491,29 @@ export default function Composer({
   // and what the editor's own `onSaved` refreshes afterwards.
   const noLayers = layersLoaded && entityEditors.layerItems.length === 0;
 
+  // Neither of the two below is true of a device whose layouts are still
+  // on their way, and that is the whole of this: `noLayouts` needs the
+  // list to have arrived before it can mean "there is none", so until it
+  // has, the other branch runs and draws a display — a keyboard for a
+  // layout that may be about to turn out not to exist. That was the
+  // layout seen for an instant on a device with none, just before its
+  // invitation to create the first.
+  //
+  // The container stays, so the page keeps its size and its ground. What
+  // it holds is nothing, for the length of one request.
+  const settling = !layoutsLoaded;
+
+  // There is a layout, and we know it. What the chrome outside the
+  // display hangs on — the Resize switch, the shortcut card, and the
+  // rest of what only means anything with something to act on. `!
+  // noLayouts` was standing for this and is not the same thing: it is
+  // also true while the list is still on its way, which is how a device
+  // with no layout came to show a moment of the controls for one.
+  const hasLayout = layoutsLoaded && !noLayouts;
+
   return (
     <Box h="100%" style={{ position: "relative", overflow: "hidden" }}>
-      {noLayouts ? (
+      {settling ? null : noLayouts ? (
         <EmptyState
           className="composer-empty"
           icon={<MdKeyboardAlt size={40} />}
@@ -635,13 +655,20 @@ export default function Composer({
           it doubles: the pickers, the mode switch and both side panels
           have all stood down by then (see `App`), and the mark is what is
           left holding the corner — at its usual height it would read as
-          the chrome of something that is no longer there. */}
-      <img
-        className="composer-logo"
-        data-large={noLayouts || undefined}
-        src={kbrdLogo}
-        alt="KBRD"
-      />
+          the chrome of something that is no longer there.
+
+          Held back while the list is still on its way, like everything
+          else in this pane (see `settling`): drawn straight away it would
+          come up at its small size and then resize under the eye on a
+          device that turns out to have no layout at all. */}
+      {!settling && (
+        <img
+          className="composer-logo"
+          data-large={noLayouts || undefined}
+          src={kbrdLogo}
+          alt="KBRD"
+        />
+      )}
 
       <Group
         gap="md"
@@ -657,7 +684,7 @@ export default function Composer({
             `mode` check for the grip itself) since there's no grid
             structure left to resize there, only plugin content. Also
             toggled by Tab (see `useLayoutShortcuts`). */}
-        {!noLayouts && !noLayers && mode === "layout" && (
+        {hasLayout && !noLayers && mode === "layout" && (
           <Switch
             label="Resize"
             size="xs"
@@ -673,7 +700,7 @@ export default function Composer({
             since Layout and Layer each wire up their own, not shared.
             With no layout there is no display for any of them to act on,
             so it stands down with everything else. */}
-        {!noLayouts && (
+        {hasLayout && (
         <HoverCard width={240} shadow="md" position="top-end" withArrow offset={12}>
           <HoverCard.Target>
             <UnstyledButton
@@ -696,14 +723,22 @@ export default function Composer({
         </HoverCard>
         )}
 
-        {/* Shown whatever the mode, but not without a layout: the empty
-            screen keeps nothing but its mark.
+        {/* Shown whatever the mode, and whether there is a layout or
+            not — the one control on this bar that outlives the display
+            it sits under.
 
-            Note that this is the only place Settings opens from, and
-            that a device out of the box has no layout — so the Network
-            tab, and with it the Wi-Fi the keyboard is reached over,
-            can't be got at until a first layout exists. */}
-        {!noLayouts && (
+            It has to be. This is the only place Settings opens from and
+            a device out of the box has no layout, so standing it down
+            with the rest took the Network tab away with it — and with
+            that, the Wi-Fi the keyboard is reached over. A device that
+            could not be put on a network until somebody had first
+            invented a keyboard layout for it.
+
+            Only `settling` holds it back, and only because nothing else
+            is on screen yet either: a button that appeared before the
+            page it belongs to would be the same flicker one corner
+            over. */}
+        {!settling && (
         <Tooltip label="Settings" position="top" withArrow>
           <UnstyledButton
             aria-label="Settings"

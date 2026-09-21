@@ -11,5 +11,13 @@ import { MdError } from "react-icons/md";
  * for that pairing to hold across the wizard.
  */
 export default function ErrorMark() {
-  return <MdError size={16} color="var(--mantine-color-red-6)" />;
+  // The same red the messages beside it are set in (see
+  // `--kbrd-error-color` in App.css), with Mantine's own behind it for
+  // anywhere this is ever drawn outside the surfaces that define it.
+  return (
+    <MdError
+      size={16}
+      color="var(--kbrd-error-color, var(--mantine-color-red-6))"
+    />
+  );
 }

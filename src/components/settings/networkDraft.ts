@@ -7,9 +7,10 @@ import { isIpv4, isNetmask } from "./ipv4";
 
 /**
  * The Wi-Fi form as it is being filled in, shared by the two places that
- * ask for one: Settings' Network tab, which shows the whole of it at
- * once, and the first-run wizard, which asks the radio and the addressing
- * as two steps (see `NetworkWifiFields` and `NetworkIpv4Fields`).
+ * ask for one: the first-run wizard, which asks the radio and the
+ * addressing as two steps, and Settings' Network tab, which puts those
+ * same two steps one under the other (see `setup/WifiPicker` and
+ * `setup/Ipv4Picker`).
  *
  * Addresses are held exactly as they are typed and checked against
  * `ipv4.ts`; `networkBody` is what turns a finished draft back into
@@ -106,14 +107,40 @@ function addressError(value: string) {
  */
 const UNSPECIFIED = "0.0.0.0";
 
+/**
+ * The fields a static configuration can be left without.
+ *
+ * A second resolver is a spare: a network resolves names through the
+ * first and only reaches for this one when that stops answering, so a
+ * configuration with one DNS server is a working configuration and
+ * insisting on two is asking for an address the user may not have. It is
+ * optional to KBRD-API too (see its `api/network.py`, which requires an
+ * address and a netmask and nothing else).
+ *
+ * Optional is not unchecked: something typed here still has to be an
+ * address. What is dropped is the requirement to type anything.
+ */
+const OPTIONAL_IPV4_FIELDS = new Set<Ipv4Field>(["dns2"]);
+
+/** Whether a field says nothing — empty, or still on the shape it
+ * started as. */
+const unanswered = (value: string) => {
+  const trimmed = value.trim();
+  return !trimmed || trimmed === UNSPECIFIED;
+};
+
 /** Which of the five are still missing, still `0.0.0.0`, or not an
- * address at all — the fields whose names are marked. */
+ * address at all — the fields whose names are marked.
+ *
+ * An optional one left empty is none of those: it is an answer, and the
+ * answer is "no second resolver". */
 export function ipv4Problems(draft: NetworkDraft): Ipv4Field[] {
   if (draft.mode !== "static") return [];
   const errors = networkDraftErrors(draft);
   return IPV4_FIELDS.filter(({ key }) => {
-    const value = draft[key].toString().trim();
-    return !value || value === UNSPECIFIED || errors[key];
+    if (errors[key]) return true;
+    if (OPTIONAL_IPV4_FIELDS.has(key)) return false;
+    return unanswered(draft[key].toString());
   }).map(({ key }) => key);
 }
 
@@ -194,7 +221,12 @@ export function networkBody(draft: NetworkDraft): NetworkWrite {
       netmask: static_ ? draft.netmask.trim() : "",
       gateway: static_ ? draft.gateway.trim() : "",
       dns1: static_ ? draft.dns1.trim() : "",
-      dns2: static_ ? draft.dns2.trim() : "",
+      // Empty for a second resolver left unanswered, `0.0.0.0` included:
+      // the field starts on that as a shape to type over, and sending it
+      // would hand the keyboard a resolver at an address that resolves
+      // nothing rather than telling it there is no second one.
+      dns2:
+        static_ && !unanswered(draft.dns2) ? draft.dns2.trim() : "",
     },
   };
   // Left out entirely while untouched — that is what keeps the saved key,

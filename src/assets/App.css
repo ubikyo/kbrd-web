@@ -300,20 +300,17 @@ body.debug * {
   display: block;
   height: 22px;
   width: auto;
-
-  /* It only ever changes size when a layout is created or the last one
-     deleted, and it moves nothing else — nothing shares its corner. */
-  transition:
-    height 220ms ease,
-    left 220ms ease;
 }
 
-/* Twice the height with no layout at all (see `Composer`), the width
-   following as it always does — and pulled in to the same margin it
-   keeps from the top, so the mark sits square in the corner rather than
-   on the indent the Layout picker opposite it used to need. */
+/* A little over three times the height with no layout at all (see
+   `Composer`), the width following as it always does — and pulled in to
+   the same margin it keeps from the top, so the mark sits square in the
+   corner rather than on the indent the Layout picker opposite it used to
+   need. The switch is not animated: the mark is only ever drawn once the
+   layout list has arrived, so the size it takes is the size it was born
+   at. */
 .composer-logo[data-large] {
-  height: 44px;
+  height: 70px;
   left: 20px;
 }
 
@@ -897,10 +894,11 @@ body.debug * {
 }
 
 /* The frame the cards are seen through: three of them across the panel's
-   width, equal shares of whatever is left of it after the padding. There
-   are five in the row and this is what hides the other two — the row is
-   slid under it rather than the cards being swapped out, so what walks
-   into view is the card itself. */
+   width — two below 1350px, where a third of that width is a column a
+   word wide — in equal shares of whatever is left of it after the
+   padding. There are five in the row and this is what hides the rest —
+   the row is slid under it rather than the cards being swapped out, so
+   what walks into view is the card itself. */
 .setup-cards {
   /* The sky is placed absolutely over the whole box, so the cards need a
      stacking context of their own to be drawn on top of it. */
@@ -925,22 +923,42 @@ body.debug * {
    floor of zero is grown out of the free space a share at a time, so
    five of them would each settle for a fifth of the frame and all five
    would fit in it. A definite width is the track's size outright,
-   whatever is left over — which is what puts the last two off the end
+   whatever is left over — which is what puts the last ones off the end
    where they belong. A label too long for that width breaks instead of
-   widening it (see `.setup-card-label`). */
+   widening it, and is clipped rather than run out of the square (see
+   `.setup-card-label`).
+
+   `--cards-shown` is how many the frame holds, and both sums are taken
+   from it: `SetupWizard` sets it on the element beside `--slide`, from
+   the same media query the rule below carries, because the slide is
+   counted in cards and has to be counted in the same number of them. */
 .setup-cards-track {
   --card-gap: 20px;
+  --cards-shown: 3;
 
   width: 100%;
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: calc((100% - 2 * var(--card-gap)) / 3);
+  grid-auto-columns: calc(
+    (100% - (var(--cards-shown) - 1) * var(--card-gap)) / var(--cards-shown)
+  );
   gap: var(--card-gap);
 
   transform: translateX(
-    calc(var(--slide, 0) * -1 * (100% + var(--card-gap)) / 3)
+    calc(var(--slide, 0) * -1 * (100% + var(--card-gap)) / var(--cards-shown))
   );
   transition: transform 320ms ease;
+}
+
+/* Two squares instead of three, under a window narrow enough that a
+   third of the panel is a column a word wide. The same figure is in
+   `SetupWizard` (see `NARROW_QUERY`), which needs it for the slide; this
+   is the one the layout is actually drawn from, so an element that
+   arrives without its own `--cards-shown` still lays out correctly. */
+@media (max-width: 1349.98px) {
+  .setup-cards-track {
+    --cards-shown: 2;
+  }
 }
 
 /* The row arrives already wound on rather than winding on as the page
@@ -952,10 +970,9 @@ body.debug * {
   }
 }
 
-/* One of them: square, and the two things in it pushed into opposite
-   corners — the number at the top, what it stands for at the bottom.
-   Square is what sets that distance, so the height is the width's and
-   not the text's.
+/* One of them: the two things in it pushed into opposite corners — the
+   number at the top, what it stands for at the bottom, held apart by a
+   height of its own rather than by the text between them.
 
    White and black outright rather than a theme's own: the ground here is
    the art's green under either of them, so neither colour is the theme's
@@ -968,12 +985,31 @@ body.debug * {
    strip of steps gone, that flip is what says where in the wizard you
    are. */
 .setup-card {
-  aspect-ratio: 1;
+  /* One height, whatever the panel's width and however many of them it
+     holds: a card's width is its share of that width and moves with it,
+     and an `aspect-ratio` here would have carried the height along with
+     it — the row growing taller as the window narrowed to two, and the
+     art above it giving up that much more of the panel. It started at
+     what the square came to at the wizard's widest and has been brought
+     down since: a card is a number, two lines and the room between
+     them, and the room was more than they needed.
+
+     The distance the number and the label are pushed apart is this,
+     then, rather than the width — which is the reason it is stated at
+     all and not left to the text. */
+  height: 160px;
   box-sizing: border-box;
   padding: 30px;
   border-radius: 15px;
   background-color: rgb(255 255 255 / 5%);
   color: #ffffff;
+  /* A label is as tall as the lines it breaks to, and the card is not —
+     so on a narrow panel the text is what doesn't fit. It is kept inside
+     the card rather than allowed to run out of the bottom of it and
+     across the row: what the label itself gives up is the last of its
+     lines (see `.setup-card-label`), and this is the backstop for
+     anything the padding box still can't hold. */
+  overflow: hidden;
 
   display: flex;
   flex-direction: column;
@@ -1026,6 +1062,14 @@ body.debug * {
   text-align: left;
   overflow-wrap: break-word;
   min-width: 0;
+  /* What gives way when the card is too short for the label: the lines
+     past the ones that fit are cut at the padding's edge rather than
+     pushing the text over it. `min-height: 0` is what lets the box
+     shrink under its own content at all — a flex item's floor is its
+     content otherwise, and with a height now stated on the card it is
+     the text that would have overrun it. */
+  min-height: 0;
+  overflow: hidden;
   /* A `\n` in a label breaks the line where it stands; everything else
      still wraps to the column as it always did (see `CARDS`). */
   white-space: pre-line;
@@ -1194,7 +1238,7 @@ body.debug * {
 }
 
 /* At the head of the cards, down on the art: it names the page, and the
-   three squares under it are what that page is going to ask for. Ranged
+   cards under it are what that page is going to ask for. Ranged
    left, on the same edge their numbers and labels are (see
    `.setup-card-label`), rather than centred over a row that isn't. */
 .setup-title {
@@ -1225,7 +1269,7 @@ body.debug * {
    column reads.
 
    A step down from the title's white: it is the same voice, saying less
-   loudly what the three squares under it already show. */
+   loudly what the cards under it already show. */
 .setup-intro {
   position: relative;
   z-index: 1;
@@ -1237,6 +1281,32 @@ body.debug * {
   font-size: 16px;
   line-height: 1.5;
   color: rgb(255 255 255 / 75%);
+}
+
+/* The mark standing in for the name in that line (see `.setup-intro`).
+
+   Sized in `em` rather than pixels, so it is the sentence's own font
+   size that sets it and the two can never drift apart.
+
+   `KBRD-Alt.svg` is a filled white badge with the letters knocked out of
+   it in black, and the letters are 57% of its height — so a badge set to
+   the font size outright would put a wordmark two thirds the size of the
+   words around it into the middle of the line. 1.2em is what brings the
+   letters inside it up to the cap height of the text they are read with;
+   the badge around them is then a little taller than the line's capitals,
+   which is what a badge is.
+
+   The offset is the rest of that: an image sits its bottom edge on the
+   baseline, and a badge as tall as this would ride above the line and
+   read as dropped in from somewhere else. Dropped a quarter of the font
+   size below it instead, the letters inside the badge come out centred
+   on the band the capitals either side of them occupy — Inter's caps
+   reach 0.727em, and the letters here are centred in a badge of 1.2em,
+   which puts both middles within a fraction of a pixel at 16px. */
+.setup-intro-logo {
+  height: 1.2em;
+  width: auto;
+  vertical-align: -0.25em;
 }
 
 /* The app's own mark where the wizard's column begins, standing off the
@@ -1268,7 +1338,14 @@ body.debug * {
   flex-direction: column;
 }
 
-.setup-content .mantine-InputWrapper-label {
+/* And the same in the Settings modal's Network tab, which is those same
+   pickers (see `.settings-network`): the SSID list and the Password
+   field opposite it only start on one line if their labels are held to
+   one height. Here rather than down with that tab's own rules so that
+   `.wifi-label` below — which takes the height back off the label
+   inside a row that already holds it — still comes after it. */
+.setup-content .mantine-InputWrapper-label,
+.settings-network .mantine-InputWrapper-label {
   display: flex;
   align-items: center;
   height: var(--setup-label-height);
@@ -1387,18 +1464,45 @@ body.debug * {
 /* A step in two columns: what is being chosen on the left, what that
    choice asks for on the right. Equal halves — the Wi-Fi step's list
    wants the room, and the addressing step's fields fill the other side
-   only once Static is picked. */
+   only once Static is picked.
+
+   `minmax(0, 1fr)` rather than `1fr`, which is the same halves said in a
+   way that holds. A bare `1fr` is `minmax(auto, 1fr)`: the column may
+   not go under what is in it, so a column whose contents grow takes the
+   room from the one beside it and the seam between them moves. The
+   screen step is where that showed — unfolding a brand puts the model
+   rows in the list, which are longer than the brand rows above them, and
+   the list stepped wider as it opened. Floored at nothing, the halves
+   are halves whatever is in them, and what doesn't fit gives inside the
+   column instead (every list in the wizard already clips or truncates:
+   see `.setup-list` and the rows in it). */
 .setup-columns {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 40px;
   align-items: start;
+}
 
-  /* Every control in the wizard cut with the same radius as the network
-     list's own frame (see `.wifi-list`), rather than each field being
-     told separately. */
+/* Every field in the wizard cut with the same radius as the network
+   list's own frame (see `.setup-list`), rather than each being told
+   separately.
+
+   On the field's own root, and that is the whole difficulty: Mantine
+   declares `--input-radius` on that root itself, so a value set on
+   anything above it — `.setup-columns`, where this used to sit — is
+   shadowed by every field it was meant to reach. The fields were the
+   theme's default 8px all along while the frame beside them was 4.
+   Declared here it lands on the same element Mantine declares it on and
+   takes it on specificity.
+
+   `mantine-Input-wrapper` is on every field in the wizard whatever
+   mounted it: Mantine names an input's root for `Input` as well as for
+   its own component, so this one selector reaches the text fields, the
+   Addressing menu and the code step's boxes alike. */
+.setup-page .mantine-Input-wrapper {
   --input-radius: var(--mantine-radius-sm);
 }
+
 
 /* The row on the left is the box; on the right it is the label itself.
    Scoped to the password field rather than to every label in the step —
@@ -1422,9 +1526,20 @@ body.debug * {
   margin-bottom: 0;
 }
 
-/* Fields stacked into one frame: the edges where two meet go entirely
-   and the corners that meet are squared, so the group reads as a single
-   control rather than as a column of separate ones.
+/* Fields stacked into one frame: the corners where two meet are squared
+   and one of the two edges there goes, so the group reads as a single
+   control ruled across rather than as a column of separate ones.
+
+   The line between two of them is the upper field's own bottom border,
+   in the same hairline grey everything in the wizard is edged with (see
+   `.setup-page .mantine-Input-input`) — it is what tells Address from
+   Netmask from Gateway now that none of them is a box of its own. The
+   field below drops its top border so the two don't draw double.
+
+   Dotted, where the frame around the group is solid: the two lines are
+   the same grey and meet at the corners, and a rule inside a box has to
+   read as quieter than the box or the group comes apart into the column
+   of separate fields it was joined up to stop being.
 
    `!important` because the app's own `.mantine-Input-input` rule above is
    `!important` too: an important declaration beats a normal one however
@@ -1440,7 +1555,7 @@ body.debug * {
 .setup-joined > *:not(:last-child) input {
   border-bottom-left-radius: 0 !important;
   border-bottom-right-radius: 0 !important;
-  border-bottom: none !important;
+  border-bottom: 1px dotted var(--kbrd-rule-color) !important;
 }
 
 /* The frame around a list of rows, shared by the two steps that offer
@@ -1556,4 +1671,177 @@ body.debug * {
     grid-template-columns: 1fr;
     gap: 24px;
   }
+}
+
+
+/* --------------------------------------------------------------------------
+   The code asked for before the app (see `Login`)
+   -------------------------------------------------------------------------- */
+
+/* The window and nothing else in it: one short form, centred both ways.
+   None of the wizard's own furniture — no art, no panel, no steps — since
+   there is one question and the page is over as soon as it is answered. */
+.login-page {
+  height: 100vh;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+/* The form's own column, and the one width in it: the mark sets the
+   measure and the password field and its button take it, so the three
+   stack edge to edge rather than a form of its own width standing under
+   a logo of another.
+
+   The width is the logo's at the height it is drawn — its own ratio,
+   read off the `viewBox` of `assets/media/KBRD-Alt.svg` (520 × 214),
+   since an `img` shrunk to a height is as wide as its artwork says. Declared
+   as the column's width rather than measured from the logo, because the
+   logo is then given that width in full and the height follows: one
+   number decides all three, and nothing can drift from it.
+
+   Floored by `width: 100%` on a window narrower than that, where the
+   three narrow together. */
+.login-form {
+  --login-logo-height: 96px;
+  width: 100%;
+  max-width: calc(var(--login-logo-height) * 520 / 214);
+}
+
+/* The badge, rather than the wordmark the wizard's column is headed by
+   (see `.setup-logo`): there is no step under it here, so what stands
+   for the page is the mark itself. `KBRD-Alt.svg` is filled white with
+   the letters knocked out of it, so it reads on the dark ground this
+   page is drawn on (see `.setup-intro-logo`, where the same file is set
+   in a line of text). The column above is what holds its size. */
+.login-logo {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+
+/* --------------------------------------------------------------------------
+   The wizard's own pickers, reused in Settings
+   -------------------------------------------------------------------------- */
+
+/* `setup/ScreenPicker` inside the Settings modal (see its Display tab).
+   The component is the wizard's and asks the same question off the same
+   list; what it doesn't bring with it is the page it was written on.
+
+   Two things that page gave it, given again here:
+
+    - the radius every control in the wizard is cut with, which is set on
+      each field's own root because Mantine declares `--input-radius`
+      there and an ancestor's is shadowed by it (see
+      `.setup-page .mantine-Input-wrapper`, where the same rule is
+      explained at length);
+    - the hairline the wizard's fields are edged in, quieter than the
+      app's own border — the list's frame is drawn in it (`.setup-list`),
+      and a picker whose frame and fields disagreed would read as two
+      controls rather than one.
+
+   The two columns underneath are the picker's own and are left alone:
+   the modal is wider than half the wizard, so what was a pair of halves
+   there is a pair of halves here. */
+.settings-screen .mantine-Input-wrapper {
+  --input-radius: var(--mantine-radius-sm);
+}
+
+.settings-screen .mantine-Input-input {
+  border-color: var(--kbrd-rule-color) !important;
+}
+
+/* `setup/WifiPicker` and `setup/Ipv4Picker` inside the Settings modal
+   (see its Network tab). Both are the wizard's, asking the wizard's two
+   network questions, and both want the same two things the screen
+   picker above wants: the radius Mantine only reads off a field's own
+   root, and the hairline the wizard edges a field with — the Wi-Fi
+   list's frame is drawn in it (`.setup-list`) and the fields beside it
+   have to agree.
+
+   And the two label variables on top, which the pickers read for the
+   box a label sits in (`--setup-label-height`) and the air under it.
+   They are declared on `.setup-page` in the wizard, which is nowhere in
+   this modal — left undefined the SSID heading's row would collapse to
+   the height of its own text and the list would start above the
+   password field beside it. */
+.settings-network {
+  --setup-label-height: 24px;
+  --setup-label-gap: 2px;
+}
+
+.settings-network .mantine-Input-wrapper {
+  --input-radius: var(--mantine-radius-sm);
+}
+
+.settings-network .mantine-Input-input {
+  border-color: var(--kbrd-rule-color) !important;
+}
+
+/* The password fields on the Code tab, and on the Login page before it:
+   the same fields the wizard's own step puts up (see `settings/Code` and
+   `setup/PasswordPicker`), so they are cut the same way. */
+.settings-code .mantine-Input-wrapper,
+.login-page .mantine-Input-wrapper {
+  --input-radius: var(--mantine-radius-sm);
+}
+
+/* And the button under the field on the Login page, cut the same way.
+   Mantine's own default radius is a rounder one and would have the two
+   controls in that little column disagreeing edge to edge — the field
+   above and the button below it are read as one thing there (see
+   `.login-form`, where they are given one width for the same reason).
+
+   Mantine reads a button's corner from `--button-radius` on the
+   button's own root, falling back to the theme default, so the override
+   goes on that element rather than on anything above it. */
+.login-page .mantine-Button-root {
+  --button-radius: var(--mantine-radius-sm);
+}
+
+/* Anything that says something is wrong, across the three surfaces that
+   ask the device's own questions — the wizard, the code it asks for
+   afterwards, and the form that changes it.
+
+   Pure red rather than the theme's. Mantine's own is a red-8 in light
+   and a red-6 in dark (`--mantine-color-error`), with a third shade
+   again for text set `c="red"` (`--mantine-color-red-text`): three
+   different reds for one meaning, and none of them the one the design
+   asks for. Redefining the two variables rather than colouring each
+   message is what reaches the ones Mantine draws itself — a field's
+   error line and the border it reddens with it — which no rule of ours
+   is holding a pen over.
+
+   Scoped rather than global on purpose: `red` elsewhere in the app is
+   not an error. The Display tab's "Disconnected" is a state, and it
+   keeps the theme's own. */
+.setup-page,
+.login-page,
+.settings-code {
+  --kbrd-error-color: #ff0000;
+  --mantine-color-error: var(--kbrd-error-color);
+  --mantine-color-red-text: var(--kbrd-error-color);
+}
+
+/* The line under the code on the Login page, and the room it keeps
+   whether there is anything in it or not.
+
+   Always rendered, always this tall: the page centres its one short
+   column, so a line appearing under the boxes would push the mark and
+   the row above it up the screen — the page flinching at the moment of
+   telling you that you were wrong. A line's worth of room, held open,
+   and the message is the only thing that comes and goes.
+
+   The height is the text's own: the font size Mantine gives `size="sm"`
+   times the line height it gives it, so the slot is exactly one line and
+   follows the theme rather than a figure copied out of it. */
+.login-message {
+  min-height: calc(
+    var(--mantine-font-size-sm) * var(--mantine-line-height-sm)
+  );
+  color: var(--kbrd-error-color);
+  text-align: center;
 }

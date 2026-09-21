@@ -87,13 +87,13 @@ function AddressField({
 }
 
 /**
- * The wizard's addressing step: how the keyboard takes an address on the
- * network picked before it.
+ * How the keyboard takes an address on the network picked beside it: the
+ * wizard's second step, and the lower half of Settings' Network tab (see
+ * `components/settings/Network`) — one question, asked the same way in
+ * both places.
  *
  * The choice on the left, what it asks for on the right — so turning
- * Static on fills the column opposite rather than growing the page. The
- * same question in Settings is a stack of rows in a modal (see
- * `NetworkIpv4Fields`), which is the right shape there.
+ * Static on fills the column opposite rather than growing the page.
  */
 export default function Ipv4Picker({ draft, onChange }: Props) {
   // What is wrong with what was typed, not what is missing:

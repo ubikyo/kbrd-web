@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useMediaQuery } from "@mantine/hooks";
 import {
   Box,
   Button,
@@ -10,6 +11,7 @@ import {
   Title,
 } from "@mantine/core";
 import kbrdLogo from "../assets/media/KBRD.svg";
+import kbrdAltLogo from "../assets/media/KBRD-Alt.svg";
 import { getNetwork, type NetworkStatus } from "../api/network";
 import { completeSetup } from "../api/setup";
 import {
@@ -61,8 +63,9 @@ function SummaryRow({ label, value }: { label: string; value: string }) {
  * Their order is the wizard's own — so a card's index is the step it stands for, and the one being
  * answered is the lit square among them.
  *
- * There are five and the panel holds three, so the row slides: see
- * `CARDS_SHOWN` and `.setup-cards` in App.css. */
+ * There are five and the panel holds three of them — two on a narrow
+ * window — so the row slides: see `CARDS_SHOWN` and `.setup-cards` in
+ * App.css. */
 const CARDS = [
   { number: "1", label: "Select a\nWi-Fi network" },
   { number: "2", label: "Set the network\naddressing" },
@@ -71,23 +74,30 @@ const CARDS = [
   { number: "5", label: "Review the settings" },
 ] as const;
 
-/** How many of them the panel shows at once. The width is cut into this
- * many columns and the row is slid by whole ones, so the number is the
- * layout's as much as it is the slide's — it is in App.css too, and the
- * two have to agree. */
+/** How many of them the panel shows at once, and below which width it
+ * drops to two. The width is cut into that many columns and the row is
+ * slid by whole ones, so the number is the layout's as much as it is the
+ * slide's — both are in App.css too (see `--cards-shown`), and the two
+ * have to agree.
+ *
+ * Three squares over a panel narrower than this are columns a word wide,
+ * where every label breaks to a stack of them; two of the same squares
+ * are half again as wide and read as the sentences they are. */
 const CARDS_SHOWN = 3;
+const CARDS_SHOWN_NARROW = 2;
+const NARROW_QUERY = "(max-width: 1349.98px)";
 
 /** How many cards the row is wound on by, for the step being answered.
  *
  * Nothing at all until the active card would fall off the end: the first
- * three steps are the first three cards, already on screen, and moving
- * under them would only take the run-up away from the two that come
- * after. From there it is whatever brings the active card to the last
- * place shown, and it stops at the end of the row rather than sliding
- * the last cards out of sight. */
-function slideFor(step: number) {
-  const last = CARDS.length - CARDS_SHOWN;
-  return Math.min(Math.max(step - (CARDS_SHOWN - 1), 0), last);
+ * steps are the first cards, already on screen, and moving under them
+ * would only take the run-up away from the ones that come after. From
+ * there it is whatever brings the active card to the last place shown,
+ * and it stops at the end of the row rather than sliding the last cards
+ * out of sight. */
+function slideFor(step: number, shown: number) {
+  const last = CARDS.length - shown;
+  return Math.min(Math.max(step - (shown - 1), 0), last);
 }
 
 /**
@@ -108,6 +118,14 @@ function slideFor(step: number) {
  */
 export default function SetupWizard({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
+
+  // Read on the first render rather than after it: the row would
+  // otherwise be laid out for three cards and reflow to two a frame
+  // later, which is the one width at which the slide should not move.
+  const narrow = useMediaQuery(NARROW_QUERY, false, {
+    getInitialValueInEffect: false,
+  });
+  const cardsShown = narrow ? CARDS_SHOWN_NARROW : CARDS_SHOWN;
 
   // Nothing is stored on a device that has never been set up, so the form
   // starts empty rather than from `/api/network`'s own configuration —
@@ -285,17 +303,38 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
           The title and the cards below it are not decoration, and are
           read like any other text. */}
         <Box className="setup-art">
-          <SetupArt />
+          {/* Everything on the panel goes once the setup is away: the
+              cards are a list of what is still to be answered and
+              nothing is, the welcome is to a wizard that has been walked,
+              and a sky still running would keep drawing the eye back to
+              the half of the page that no longer has anything to say. The
+              green stays, so what is left is the page the last word is
+              written on (see `applied` below). */}
+          {!applied && (
+            <>
+              <SetupArt />
 
-          {/* Over the cards rather than over the wizard opposite: it
-            names what the three of them are a list of, and the wizard's
+              {/* Over the cards rather than over the wizard opposite: it
+            names what the cards are a list of, and the wizard's
             own column is headed by the mark instead. */}
-          <div className="setup-title">Welcome!</div>
-          <p className="setup-intro">
-            Complete these steps to set up <b>KBRD</b>.
-          </p>
+              <div className="setup-title">Welcome!</div>
+              <p className="setup-intro">
+                {/* The mark itself where the name was, set in the line
+                    rather than standing over it — and carrying the name
+                    as its `alt`, so the sentence is still a sentence
+                    read aloud. It is the one place in the wizard the
+                    logo is a word and not a heading (see
+                    `.setup-intro-logo`). */}
+                Complete these steps to set up{" "}
+                <img
+                  className="setup-intro-logo"
+                  src={kbrdAltLogo}
+                  alt="KBRD"
+                />
+                .
+              </p>
 
-          {/* Along the foot of the panel, over the art. The number in its
+              {/* Along the foot of the panel, over the art. The number in its
             disc at the top of each square and the line it stands for at
             the bottom — the two corners the square is drawn to hold
             apart (see `.setup-card` in App.css).
@@ -303,23 +342,30 @@ export default function SetupWizard({ onDone }: { onDone: () => void }) {
             The frame shows three of the five; the row inside it carries
             all of them and is slid under it, which is what walks the
             last two into view as they are reached. */}
-          <Box className="setup-cards">
-            <Box
-              className="setup-cards-track"
-              style={{ "--slide": slideFor(step) } as React.CSSProperties}
-            >
-              {CARDS.map((card, index) => (
+              <Box className="setup-cards">
                 <Box
-                  key={card.number}
-                  className="setup-card"
-                  data-active={index === step || undefined}
+                  className="setup-cards-track"
+                  style={
+                    {
+                      "--slide": slideFor(step, cardsShown),
+                      "--cards-shown": cardsShown,
+                    } as React.CSSProperties
+                  }
                 >
-                  <span className="setup-card-number">{card.number}</span>
-                  <span className="setup-card-label">{card.label}</span>
+                  {CARDS.map((card, index) => (
+                    <Box
+                      key={card.number}
+                      className="setup-card"
+                      data-active={index === step || undefined}
+                    >
+                      <span className="setup-card-number">{card.number}</span>
+                      <span className="setup-card-label">{card.label}</span>
+                    </Box>
+                  ))}
                 </Box>
-              ))}
-            </Box>
-          </Box>
+              </Box>
+            </>
+          )}
         </Box>
 
         <Box className="setup-shell">

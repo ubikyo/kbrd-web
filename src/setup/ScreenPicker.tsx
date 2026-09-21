@@ -8,7 +8,6 @@ import {
   ScrollArea,
   Stack,
   Text,
-  TextInput,
   UnstyledButton,
 } from "@mantine/core";
 import { MdChevronRight, MdMonitor } from "react-icons/md";
@@ -17,15 +16,24 @@ import { PANELS } from "./panels";
 import {
   MAX_MM,
   MIN_MM,
-  screenName,
   screenPanel,
   sizeInRange,
   type ScreenDraft,
 } from "./screenDraft";
 
+/** One more reading to hang under the column on the right — what the
+ * screen picked here comes to on the device attached now. The wizard
+ * has none of these (nothing is attached yet); Settings passes the
+ * resolution and the DPI. */
+export type ScreenFact = {
+  label: string;
+  value: string;
+};
+
 type Props = {
   draft: ScreenDraft;
   onChange: (patch: Partial<ScreenDraft>) => void;
+  facts?: ScreenFact[];
 };
 
 /**
@@ -35,24 +43,35 @@ type Props = {
  * The list cascades — brands at the top level, the models under the one
  * that is open — because a model only means anything under its own brand
  * and the two as a pair of dropdowns asked the same question twice. One
- * brand is open at a time: the frame is eight rows tall, and a list with
- * everything unfolded would scroll past what was being chosen.
+ * brand is open at a time, and none of them to begin with: the frame is
+ * eight rows tall, and a list that unfolded anything on its own would
+ * push the brands below it out of the frame before they had been read.
  *
  * A screen that isn't on the list is the row under it, the way a hidden
  * network is on the Wi-Fi step (see `WifiPicker`): the same question,
  * described by hand instead of picked — and the fields for it take the
  * column opposite rather than growing this one.
  */
-export default function ScreenPicker({ draft, onChange }: Props) {
+export default function ScreenPicker({ draft, onChange, facts = [] }: Props) {
   // Which brand is unfolded. Only ever a display state: it starts on the
-  // brand already picked so coming back to the step shows the choice in
-  // place, and on the first brand otherwise so the list opens with
-  // something to pick rather than two closed rows.
-  const [open, setOpen] = useState(draft.brand || PANELS[0]?.brand || "");
+  // brand already picked, so coming back to the step shows the choice in
+  // place, and on nothing otherwise — the list opens as the brands
+  // alone, which is the question it is really asking first.
+  const [open, setOpen] = useState(draft.brand || "");
 
   const panel = screenPanel(draft);
   const custom = draft.mode === "custom";
-  const name = screenName(draft);
+
+  // Read the same way as the facts above them — the label over the
+  // value — whichever of the two branches the column is showing.
+  const factRows = facts.map((fact) => (
+    <Box key={fact.label}>
+      <Input.Label>{fact.label}</Input.Label>
+      <Text className="setup-fact" size="sm" c="dimmed">
+        {fact.value}
+      </Text>
+    </Box>
+  ));
 
   /** Moving to a screen described by hand starts from nothing: the panel
    * that was selected is not a first guess at another one, it is the
@@ -66,7 +85,7 @@ export default function ScreenPicker({ draft, onChange }: Props) {
   return (
     <Box className="setup-columns">
       <Stack gap={0}>
-        <Input.Label>Screen</Input.Label>
+        <Input.Label>Model</Input.Label>
 
         <Box className="setup-list">
           <ScrollArea className="setup-scroll" type="scroll">
@@ -140,12 +159,12 @@ export default function ScreenPicker({ draft, onChange }: Props) {
             <Radio
               size="xs"
               color="green"
-              aria-label="Another screen"
+              aria-label="Another model"
               checked={custom}
               onChange={chooseCustom}
             />
             <Text size="sm" c="dimmed">
-              Another screen
+              Another model
             </Text>
           </Group>
         </Box>
@@ -154,13 +173,6 @@ export default function ScreenPicker({ draft, onChange }: Props) {
       <Stack gap="md">
         {custom ? (
           <>
-            <TextInput
-              label="Name"
-              maxLength={64}
-              value={draft.name}
-              onFocus={chooseCustom}
-              onChange={(event) => onChange({ name: event.currentTarget.value })}
-            />
             <NumberInput
               label="Width (mm)"
               suffix=" mm"
@@ -197,18 +209,13 @@ export default function ScreenPicker({ draft, onChange }: Props) {
               The screen's active area — what it actually draws on, bezel
               excluded.
             </Text>
+            {factRows}
           </>
         ) : (
           <>
             {/* What the row on the left comes to, rather than a second
-                place to change it: the name the device will store, and
-                the size every layout is then drawn against. */}
-            <Box>
-              <Input.Label>Name</Input.Label>
-              <Text className="setup-fact" size="sm" c="dimmed">
-                {name || "Pick a screen"}
-              </Text>
-            </Box>
+                place to change it: the size every layout is then drawn
+                against, and whatever else the panel is worth saying. */}
             <Box>
               <Input.Label>Size</Input.Label>
               <Text className="setup-fact" size="sm" c="dimmed">
@@ -223,10 +230,7 @@ export default function ScreenPicker({ draft, onChange }: Props) {
                 </Text>
               </Box>
             )}
-            <Text size="xs" c="dimmed">
-              The active area of the panel, not its bezel. If yours isn't
-              listed, describe it under "Another screen".
-            </Text>
+            {factRows}
           </>
         )}
       </Stack>

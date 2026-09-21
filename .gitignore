@@ -29,3 +29,14 @@ dist-ssr
 # ever creates it on the device).
 data/media/*
 !data/media/.gitkeep
+
+# The keyboard's own filesystem as a development machine gets to have
+# one: what a setup wrote, at the paths the device writes it to —
+# `board/data/network` for its `/data/network`, `board/var/lib/iwd` for
+# its `/var/lib/iwd` (see KBRD-API's `dev_server.py`).
+#
+# None of it is this repository's business: it is one machine's idea of
+# one keyboard, and the iwd profile in it carries the network's key in
+# clear, exactly as the keyboard's does. The folder builds itself on the
+# first save, so there is nothing to keep here for a fresh clone.
+board/

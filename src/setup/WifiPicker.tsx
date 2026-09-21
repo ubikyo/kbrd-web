@@ -28,11 +28,14 @@ import {
  * behind it and always comes back empty — which leaves the one step that
  * is meant to be picked from with nothing to pick.
  *
- * Invented names, deliberately obvious ones. Nothing here ever reaches a
- * device: picking one fills the SSID field exactly as a real scan would,
- * and the wizard then fails to join it, which is the truthful outcome.
+ * Invented names, deliberately obvious ones, with one real network at the
+ * top: the development machine's own, so the step can be walked through
+ * to a network that actually exists rather than only to a name. Nothing
+ * here ever reaches a device — picking one fills the SSID field exactly
+ * as a real scan would, and it is the keyboard that joins it or doesn't.
  */
 const DEMO_NETWORKS: ScannedNetwork[] = [
+  { ssid: "Unify", security: "psk" },
   { ssid: "Livebox-4F2A", security: "psk" },
   { ssid: "Freebox-CAFE", security: "psk" },
   { ssid: "Bbox-9C1D", security: "psk" },
@@ -50,24 +53,35 @@ type Props = {
    * Only read in development, where `true` is what takes the list off
    * its invented networks and onto a real scan. */
   onDevice: boolean | null;
+  /** Whether a key is already stored for the saved network. Never true
+   * on a first run — nothing is stored yet — and what turns the key
+   * field's placeholder into "Unchanged" in Settings, where an untouched
+   * field keeps the saved key rather than clearing it (see
+   * `networkDraft`). */
+  secured?: boolean;
 };
 
 /**
- * The wizard's own way of picking a network: the ones in range down the
- * left, what is being joined down the right.
+ * The way a network is picked: the ones in range down the left, what is
+ * being joined down the right.
  *
- * Settings asks the same question in one row of a modal (see
- * `NetworkWifiFields`), which is the right shape there. Here there is a
- * whole page for it and nothing else to do with it, so the scan runs on
- * its own as the step opens and the result is the control — a Combobox
- * with its options rendered inline rather than in a dropdown, which is
- * what gives the list its keyboard handling for free.
+ * The wizard's step and Settings' Network tab are both this — one
+ * question asked once, so it is asked the same way in both places (see
+ * `components/settings/Network`). The scan runs on its own as it opens
+ * and the result is the control — a Combobox with its options rendered
+ * inline rather than in a dropdown, which is what gives the list its
+ * keyboard handling for free.
  *
  * A hidden network never turns up in a scan, so the name stays typable on
  * the right — and typing is also what clears the selection on the left,
  * both writing the same one field.
  */
-export default function WifiPicker({ draft, onChange, onDevice }: Props) {
+export default function WifiPicker({
+  draft,
+  onChange,
+  onDevice,
+  secured = false,
+}: Props) {
   const [networks, setNetworks] = useState<ScannedNetwork[] | null>(null);
   // Starts true: the first scan runs as this mounts, and a control that
   // began idle would flash "no networks" before it had looked.
@@ -258,6 +272,13 @@ export default function WifiPicker({ draft, onChange, onDevice }: Props) {
       <Stack gap="md">
         <PasswordInput
           label="Password"
+          // What is saved is never handed back to be shown, so in
+          // Settings an empty field is "keep the key that is there"
+          // rather than "this network is open" — the placeholder is the
+          // only thing that says so. Nothing to keep on a first run.
+          placeholder={
+            secured && !draft.passphraseTouched ? "Unchanged" : undefined
+          }
           // Its label is held to the same box as every other in the
           // wizard by `.setup-content` in App.css — that is what starts
           // it level with the list opposite. The radius comes from

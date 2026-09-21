@@ -43,6 +43,27 @@ export type LayoutPayload = Pick<
 export type DisplayData = {
   physical_width_mm: number;
   physical_height_mm: number;
+  /** Which screen this is. Written first by the wizard and changed
+   * whenever Settings picks a different panel off the same list (see
+   * `setup/panels`). Empty on a device that has never been set up;
+   * `brand`/`model` are also empty for a screen described by hand,
+   * which has no entry on the list to point back at. */
+  name: string;
+  brand: string;
+  model: string;
+};
+
+/** What a write to `/api/display` may carry. The screen's name travels
+ * with its size or not at all — a row naming one panel at another's
+ * millimetres describes no screen that exists — and left out entirely it
+ * is left alone, which is what keeps a size nudged by hand from quietly
+ * unnaming the panel it belongs to. */
+export type DisplayWrite = {
+  physical_width_mm: number;
+  physical_height_mm: number;
+  name?: string;
+  brand?: string;
+  model?: string;
 };
 
 /** Physical grid settings edited across Settings (physical width/height)
